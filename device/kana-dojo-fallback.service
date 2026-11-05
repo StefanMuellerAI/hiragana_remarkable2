@@ -1,0 +1,7 @@
+[Unit]
+Description=Kana-Dojo beenden und Original-Software starten
+
+[Service]
+Type=oneshot
+ExecStart=@SYSTEMCTL@ stop kana-dojo.service kana-dojo-display.service
+ExecStart=@SYSTEMCTL@ start xochitl.service

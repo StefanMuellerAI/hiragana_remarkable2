@@ -1,0 +1,16 @@
+[Unit]
+Description=Kana-Dojo Bildschirm-Dienst (rm2fb, swtcon)
+After=home.mount xochitl.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+OnFailure=kana-dojo-fallback.service
+
+[Service]
+# Make sure the original software isn't driving the display at the same time.
+ExecStartPre=-@SYSTEMCTL@ stop xochitl.service
+ExecStart=@BASE@/bin/rm2fb_server_swtcon
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

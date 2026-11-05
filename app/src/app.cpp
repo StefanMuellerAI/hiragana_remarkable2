@@ -1,0 +1,1017 @@
+#include "app.h"
+
+#include <algorithm>
+#include <cmath>
+#include <random>
+#include <sstream>
+
+using gfx::FontId;
+using gfx::Rect;
+
+namespace app {
+namespace {
+
+constexpr int W = gfx::kWidth;
+constexpr int H = gfx::kHeight;
+const Rect kBox = Rect::xywh(152, 470, 1100, 1100);
+const Rect kFeedback = { 0, 1585, W, 1708 };
+constexpr float kInkWidth = 10.f;
+constexpr int64_t kSleepAfterMs = 10 * 60 * 1000;
+constexpr int64_t kAutoAdvanceMs = 1300;
+constexpr int kFlashEvery = 6;
+constexpr size_t kSessionSize = 20;
+
+const char* const kModeNames[] = { "Lernen", "Üben", "Test" };
+
+std::string
+scriptName(kana::Script s) {
+  return s == kana::Script::Hiragana ? "Hiragana" : "Katakana";
+}
+
+std::string
+scriptKey(kana::Script s) {
+  return s == kana::Script::Hiragana ? "H" : "K";
+}
+
+} // namespace
+
+App::App(Platform& platform, const gfx::Fonts& fonts, kana::Progress& progress)
+  : platform_(platform), fonts_(fonts), progress_(progress) {
+  groupSelected_.assign(kana::groups().size(), false);
+}
+
+void
+App::start() {
+  script_ = progress_.setting("script", "H") == "K" ? kana::Script::Katakana
+                                                     : kana::Script::Hiragana;
+  for (const auto& g : kana::groups()) {
+    std::string list = progress_.setting("groups." + scriptKey(g.script), "a");
+    std::istringstream ss(list);
+    std::string name;
+    while (std::getline(ss, name, ',')) {
+      if (name == g.name) {
+        groupSelected_[g.index] = true;
+      }
+    }
+  }
+  lastInputMs_ = platform_.nowMs();
+  show(Screen::Home);
+}
+
+std::string
+App::screenName() const {
+  switch (screen_) {
+    case Screen::Home:
+      return "home";
+    case Screen::Practice:
+      return "practice";
+    case Screen::Summary:
+      return "summary";
+    case Screen::Progress:
+      return "progress";
+    case Screen::System:
+      return "system";
+  }
+  return "?";
+}
+
+// ---------------------------------------------------------------- drawing --
+
+void
+App::invalidate(Rect r, Refresh mode) {
+  r = r.clipped(canvas_.rect());
+  if (!r.empty()) {
+    pending_.push_back({ r, mode });
+  }
+}
+
+void
+App::flush() {
+  if (pending_.empty()) {
+    return;
+  }
+  // One full refresh covers everything else.
+  for (const auto& p : pending_) {
+    if (p.mode == Refresh::Full) {
+      pending_.clear();
+      platform_.push(canvas_, canvas_.rect(), Refresh::Full);
+      return;
+    }
+  }
+  Rect ui, ink;
+  for (const auto& p : pending_) {
+    (p.mode == Refresh::Ui ? ui : ink) = (p.mode == Refresh::Ui ? ui : ink).united(p.r);
+  }
+  pending_.clear();
+  if (!ink.empty()) {
+    platform_.push(canvas_, ink, Refresh::Ink);
+  }
+  if (!ui.empty()) {
+    platform_.push(canvas_, ui, Refresh::Ui);
+  }
+}
+
+void
+App::show(Screen s) {
+  screen_ = s;
+  pressedButton_ = -1;
+  redraw();
+  invalidate(canvas_.rect(), Refresh::Full);
+}
+
+void
+App::redraw() {
+  buttons_.clear();
+  canvas_.fill(canvas_.rect(), gfx::kWhite);
+  switch (screen_) {
+    case Screen::Home:
+      drawHome();
+      break;
+    case Screen::Practice:
+      drawPractice();
+      break;
+    case Screen::Summary:
+      drawSummary();
+      break;
+    case Screen::Progress:
+      drawProgress();
+      break;
+    case Screen::System:
+      drawSystem();
+      break;
+  }
+}
+
+void
+App::drawButton(Rect r, const std::string& label, bool primary,
+                std::function<void()> action, const std::string& sub) {
+  const uint8_t bg = primary ? gfx::kBlack : gfx::kWhite;
+  const uint8_t fg = primary ? gfx::kWhite : gfx::kBlack;
+  canvas_.roundRect(r, 18, bg, 4, gfx::kBlack);
+  if (sub.empty()) {
+    canvas_.textCentered(fonts_, FontId::Bold, 40, label, r.cx(), r.cy() + 14, fg);
+  } else {
+    canvas_.textCentered(fonts_, FontId::Bold, 40, label, r.cx(), r.cy() - 4, fg);
+    canvas_.textCentered(fonts_, FontId::Regular, 26, sub, r.cx(), r.cy() + 36, fg);
+  }
+  buttons_.push_back({ r, std::move(action) });
+}
+
+void
+App::drawHeader(const std::string& title, const std::string& right) {
+  drawButton(Rect::xywh(24, 18, 210, 78), "‹ Menü", false, [this] {
+    show(Screen::Home);
+  });
+  canvas_.textCentered(fonts_, FontId::Bold, 40, title, W / 2, 72, gfx::kBlack);
+  if (!right.empty()) {
+    const int w = fonts_.textWidth(FontId::Regular, 40, right);
+    canvas_.text(fonts_, FontId::Regular, 40, right, W - 40 - w, 72, gfx::kBlack);
+  }
+  canvas_.fill({ 0, 112, W, 115 }, gfx::kLight);
+}
+
+void
+App::drawCheckMark(int cx, int cy, int s, uint8_t v) {
+  canvas_.line(cx - s * 0.5f, cy, cx - s * 0.15f, cy + s * 0.35f, s * 0.16f, v, true);
+  canvas_.line(cx - s * 0.15f, cy + s * 0.35f, cx + s * 0.55f, cy - s * 0.4f,
+               s * 0.16f, v, true);
+}
+
+void
+App::drawHome() {
+  const int battery = platform_.batteryPercent();
+  if (battery >= 0) {
+    const std::string b = "Akku " + std::to_string(battery) + " %";
+    const int w = fonts_.textWidth(FontId::Regular, 26, b);
+    canvas_.text(fonts_, FontId::Regular, 26, b, W - 40 - w, 50, gfx::kDark);
+  }
+  canvas_.textCentered(fonts_, FontId::Kana, 150, "かな道場", W / 2, 235, gfx::kBlack);
+  canvas_.textCentered(fonts_, FontId::Regular, 32,
+                       "Kana-Dojo · Hiragana und Katakana schreiben lernen",
+                       W / 2, 305, gfx::kDark);
+
+  // Script toggle
+  canvas_.text(fonts_, FontId::Bold, 32, "Schrift", 60, 392, gfx::kBlack);
+  for (int i = 0; i < 2; i++) {
+    const auto s = static_cast<kana::Script>(i);
+    const Rect r = Rect::xywh(60 + i * 654, 412, 630, 150);
+    const bool sel = s == script_;
+    canvas_.roundRect(r, 18, sel ? gfx::kBlack : gfx::kWhite, 4, gfx::kBlack);
+    const uint8_t fg = sel ? gfx::kWhite : gfx::kBlack;
+    canvas_.textCentered(fonts_, FontId::Kana, 64,
+                         i == 0 ? "ひらがな" : "カタカナ", r.cx(), r.y0 + 82, fg);
+    canvas_.textCentered(fonts_, FontId::Regular, 32, scriptName(s), r.cx(),
+                         r.y0 + 128, fg);
+    buttons_.push_back({ r, [this, s] {
+                          script_ = s;
+                          progress_.setSetting("script", scriptKey(s));
+                          progress_.save();
+                          redraw();
+                          invalidate(canvas_.rect(), Refresh::Ui);
+                        } });
+  }
+
+  // Row (gyō) selection
+  canvas_.text(fonts_, FontId::Bold, 32, "Reihen", 60, 642, gfx::kBlack);
+  auto setAll = [this](bool on) {
+    std::string list;
+    for (const auto& g : kana::groups()) {
+      if (g.script == script_) {
+        groupSelected_[g.index] = on;
+        if (on) {
+          list += (list.empty() ? "" : ",") + g.name;
+        }
+      }
+    }
+    progress_.setSetting("groups." + scriptKey(script_), list);
+    progress_.save();
+    redraw();
+    invalidate(canvas_.rect(), Refresh::Ui);
+  };
+  drawButton(Rect::xywh(1004, 594, 160, 66), "Alle", false, [setAll] { setAll(true); });
+  drawButton(Rect::xywh(1184, 594, 160, 66), "Keine", false, [setAll] { setAll(false); });
+
+  int col = 0, row = 0;
+  for (const auto& g : kana::groups()) {
+    if (g.script != script_) {
+      continue;
+    }
+    const Rect r = Rect::xywh(60 + col * 162, 684 + row * 156, 148, 140);
+    const bool sel = groupSelected_[g.index];
+    canvas_.roundRect(r, 16, sel ? gfx::kBlack : gfx::kWhite, 3,
+                      sel ? gfx::kBlack : gfx::kMid);
+    const uint8_t fg = sel ? gfx::kWhite : gfx::kBlack;
+    const auto& first = kana::all()[g.kana.front()];
+    canvas_.textCentered(fonts_, FontId::Kana, 64, first.glyph, r.cx(), r.y0 + 80, fg);
+    canvas_.textCentered(fonts_, FontId::Regular, 26, g.name, r.cx(), r.y0 + 124, fg);
+    const int gi = g.index;
+    buttons_.push_back({ r, [this, gi] {
+                          groupSelected_[gi] = !groupSelected_[gi];
+                          std::string list;
+                          for (const auto& gg : kana::groups()) {
+                            if (gg.script == script_ && groupSelected_[gg.index]) {
+                              list += (list.empty() ? "" : ",") + gg.name;
+                            }
+                          }
+                          progress_.setSetting("groups." + scriptKey(script_), list);
+                          progress_.save();
+                          redraw();
+                          invalidate(canvas_.rect(), Refresh::Ui);
+                        } });
+    if (++col == 8) {
+      col = 0;
+      row++;
+    }
+  }
+
+  // Modes
+  canvas_.text(fonts_, FontId::Bold, 32, "Üben", 60, 1052, gfx::kBlack);
+  const int n = static_cast<int>(selectedKana().size());
+  const int due = dueCount();
+  struct ModeInfo {
+    Mode mode;
+    const char* title;
+    const char* desc;
+    std::string right;
+  };
+  const ModeInfo modes[] = {
+    { Mode::Learn, "Lernen", "Mit Vorlage nachfahren, Strich für Strich",
+      std::to_string(n) + " Zeichen" },
+    { Mode::Practice, "Üben", "Aus dem Gedächtnis schreiben, mit Korrektur",
+      std::to_string(std::min<int>(n, kSessionSize)) + " Zeichen" },
+    { Mode::Test, "Test", "Lernkartei: fällige Zeichen wiederholen",
+      std::to_string(due) + " fällig" },
+  };
+  for (int i = 0; i < 3; i++) {
+    const Rect r = Rect::xywh(60, 1076 + i * 190, 1284, 170);
+    canvas_.roundRect(r, 18, gfx::kWhite, 4, gfx::kBlack);
+    canvas_.text(fonts_, FontId::Bold, 52, modes[i].title, r.x0 + 40, r.y0 + 78, gfx::kBlack);
+    canvas_.text(fonts_, FontId::Regular, 32, modes[i].desc, r.x0 + 40, r.y0 + 132, gfx::kDark);
+    const int w = fonts_.textWidth(FontId::Bold, 40, modes[i].right);
+    canvas_.text(fonts_, FontId::Bold, 40, modes[i].right, r.x1 - 50 - w, r.y0 + 100,
+                 gfx::kBlack);
+    const Mode m = modes[i].mode;
+    buttons_.push_back({ r, [this, m] { startMode(m); } });
+  }
+
+  if (!homeNotice_.empty()) {
+    canvas_.textCentered(fonts_, FontId::Bold, 32, homeNotice_, W / 2, 1668, gfx::kBlack);
+    homeNotice_.clear();
+  }
+
+  drawButton(Rect::xywh(60, 1690, 630, 130), "Fortschritt", false,
+             [this] { show(Screen::Progress); });
+  drawButton(Rect::xywh(714, 1690, 630, 130), "System", false,
+             [this] { show(Screen::System); });
+}
+
+std::string
+App::promptLabel(const kana::Kana& k) const {
+  if (k.romaji == "-") {
+    return "ー";
+  }
+  return k.romaji;
+}
+
+void
+App::drawKanaStrokes(const kana::Kana& k, Rect box, int upto, int highlight,
+                     float width, uint8_t done, uint8_t cur) {
+  const float s = box.w() / kana::kGlyphSize;
+  for (int i = 0; i < upto && i < static_cast<int>(k.strokes.size()); i++) {
+    std::vector<std::pair<float, float>> pts;
+    for (const auto& p : k.strokes[i].points) {
+      pts.emplace_back(box.x0 + p.x * s, box.y0 + p.y * s);
+    }
+    canvas_.polyline(pts, width, i == highlight ? cur : done, true);
+  }
+}
+
+void
+App::drawPrompt() {
+  const auto& k = kana::all()[queue_[pos_]];
+  const Rect area{ 0, 118, W, 462 };
+  canvas_.fill(area, gfx::kWhite);
+
+  const std::string label = promptLabel(k);
+  const bool longMark = k.romaji == "-";
+  const FontId labelFont = longMark ? FontId::Kana : FontId::Bold;
+  canvas_.text(fonts_, labelFont, 110, label, 80, 300, gfx::kBlack);
+
+  std::string sub;
+  if (kana::groups()[k.group].name == "klein") {
+    sub = "klein geschrieben";
+  } else if (longMark) {
+    sub = "Langvokal-Strich";
+  }
+  if (mode_ != Mode::Test) {
+    const int n = static_cast<int>(k.strokes.size());
+    sub += (sub.empty() ? "" : " · ") + std::to_string(n) + (n == 1 ? " Strich" : " Striche");
+  }
+  canvas_.text(fonts_, FontId::Regular, 32, sub, 84, 372, gfx::kDark);
+
+  const bool showGlyph = mode_ == Mode::Learn || kanaDone_;
+  if (showGlyph && !longMark) {
+    const int x = 80 + fonts_.textWidth(labelFont, 110, label) + 70;
+    canvas_.text(fonts_, FontId::Kana, 150, k.glyph, x, 318, gfx::kBlack);
+  }
+
+  if (mode_ == Mode::Learn) {
+    const int n = static_cast<int>(k.strokes.size());
+    const int size = 100, gap = 12;
+    int x = W - 60 - n * (size + gap) + gap;
+    canvas_.text(fonts_, FontId::Regular, 26, "Strichfolge", x, 196, gfx::kDark);
+    for (int i = 0; i < n; i++) {
+      const Rect r = Rect::xywh(x + i * (size + gap), 214, size, size);
+      canvas_.frame(r, 2, gfx::kLight);
+      drawKanaStrokes(k, r, i + 1, i, 4.5f, gfx::kMid, gfx::kBlack);
+      const auto& start = k.strokes[i].points.front();
+      const float s = size / kana::kGlyphSize;
+      canvas_.disk(r.x0 + start.x * s, r.y0 + start.y * s, 5, gfx::kBlack);
+    }
+  }
+}
+
+std::pair<float, float>
+App::toScreen(kana::Pt p) const {
+  const float s = kBox.w() / kana::kGlyphSize;
+  return { kBox.x0 + p.x * s, kBox.y0 + p.y * s };
+}
+
+kana::Pt
+App::toRef(float x, float y) const {
+  const float s = kBox.w() / kana::kGlyphSize;
+  return { (x - kBox.x0) / s, (y - kBox.y0) / s };
+}
+
+bool
+App::inBox(float x, float y) const {
+  return kBox.inset(4).contains(int(x), int(y));
+}
+
+void
+App::drawRefStroke(const kana::Line& ref, float width, uint8_t v, bool arrow) {
+  std::vector<std::pair<float, float>> pts;
+  for (const auto& p : ref) {
+    pts.push_back(toScreen(p));
+  }
+  canvas_.polyline(pts, width, v, true);
+  canvas_.disk(pts.front().first, pts.front().second, width * 1.1f, v);
+  if (arrow && pts.size() >= 4) {
+    const auto& a = pts[pts.size() - 4];
+    const auto& b = pts.back();
+    float dx = b.first - a.first, dy = b.second - a.second;
+    const float len = std::hypot(dx, dy);
+    if (len > 0.1f) {
+      dx /= len;
+      dy /= len;
+      const float L = width * 3.2f, Wd = width * 1.9f;
+      const float tipX = b.first + dx * L * 0.6f, tipY = b.second + dy * L * 0.6f;
+      canvas_.triangle(tipX, tipY, tipX - dx * L - dy * Wd, tipY - dy * L + dx * Wd,
+                       tipX - dx * L + dy * Wd, tipY - dy * L - dx * Wd, v);
+    }
+  }
+}
+
+void
+App::drawBox() {
+  const auto& k = kana::all()[queue_[pos_]];
+  canvas_.fill(kBox, gfx::kWhite);
+  canvas_.frame(kBox, 4, gfx::kBlack);
+  canvas_.dashedLine(kBox.cx(), kBox.y0 + 8, kBox.cx(), kBox.y1 - 8, 22, 3, gfx::kLight);
+  canvas_.dashedLine(kBox.x0 + 8, kBox.cy(), kBox.x1 - 8, kBox.cy(), 22, 3, gfx::kLight);
+
+  const int done = checker_ ? checker_->done() : 0;
+  if (mode_ == Mode::Learn) {
+    drawKanaStrokes(k, kBox, static_cast<int>(k.strokes.size()), -1, 30.f,
+                    gfx::kFaint, gfx::kFaint);
+    for (int i = 0; i < static_cast<int>(k.strokes.size()); i++) {
+      const bool next = i == done && !kanaDone_;
+      const auto start = toScreen(k.strokes[i].points.front());
+      canvas_.disk(start.first, start.second, next ? 13.f : 8.f,
+                   next ? gfx::kBlack : gfx::kMid);
+      const auto lp = toScreen(k.strokes[i].label);
+      canvas_.text(fonts_, FontId::Bold, next ? 40 : 32, std::to_string(i + 1),
+                   int(lp.first) - 8, int(lp.second) + 6, next ? gfx::kBlack : gfx::kMid);
+    }
+  }
+
+  for (const auto& stroke : inked_) {
+    canvas_.polyline(stroke, kInkWidth, gfx::kBlack);
+  }
+  if (!wrongStroke_.empty()) {
+    canvas_.polyline(wrongStroke_, kInkWidth, gfx::kLight);
+  }
+  if (hintStroke_ >= 0 && hintStroke_ < static_cast<int>(k.strokes.size())) {
+    drawRefStroke(k.strokes[hintStroke_].points, 12.f, gfx::kDark, true);
+  }
+  if (kanaDone_ && mode_ != Mode::Learn) {
+    for (const auto& s : k.strokes) {
+      std::vector<std::pair<float, float>> pts;
+      for (const auto& p : s.points) {
+        pts.push_back(toScreen(p));
+      }
+      canvas_.polyline(pts, 4.f, gfx::kMid, true);
+    }
+  }
+}
+
+void
+App::drawFeedback(const std::string& msg, bool bold) {
+  canvas_.fill(kFeedback, gfx::kWhite);
+  canvas_.textCentered(fonts_, bold ? FontId::Bold : FontId::Regular, 40, msg, W / 2,
+                       1662, gfx::kBlack);
+  invalidate(kFeedback, Refresh::Ui);
+}
+
+void
+App::drawPractice() {
+  const std::string title =
+    std::string(kModeNames[static_cast<int>(mode_)]) + " · " + scriptName(script_);
+  drawHeader(title, std::to_string(pos_ + 1) + " / " + std::to_string(queue_.size()));
+  drawPrompt();
+  drawBox();
+  drawFeedback(mode_ == Mode::Learn ? "Fahre die Vorlage nach – beginne beim schwarzen Punkt."
+                                    : "Schreibe das Zeichen ins Feld.",
+               false);
+
+  drawButton(Rect::xywh(52, 1722, 400, 120), "Löschen", false, [this] {
+    loadKana();
+    drawBox();
+    drawPrompt();
+    invalidate(kBox, Refresh::Ui);
+    invalidate({ 0, 118, W, 462 }, Refresh::Ui);
+    drawFeedback("Neuer Versuch.", false);
+  });
+  drawButton(Rect::xywh(502, 1722, 400, 120), "Tipp", false, [this] {
+    if (kanaDone_ || !checker_) {
+      return;
+    }
+    hintUsed_ = true;
+    hintStroke_ = checker_->done();
+    drawBox();
+    invalidate(kBox, Refresh::Ui);
+    drawFeedback("Strich " + std::to_string(hintStroke_ + 1) +
+                   ": hier beginnen, in Pfeilrichtung ziehen.",
+                 false);
+  });
+  drawButton(Rect::xywh(952, 1722, 400, 120), "Weiter ›", true, [this] { nextKana(); });
+}
+
+void
+App::drawSummary() {
+  drawHeader("Runde beendet", "");
+  int clean = 0;
+  float quality = 0;
+  std::vector<int> wrong;
+  for (const auto& r : results_) {
+    if (r.mistakes == 0) {
+      clean++;
+    } else if (std::find(wrong.begin(), wrong.end(), r.kana) == wrong.end()) {
+      wrong.push_back(r.kana);
+    }
+    quality += r.quality;
+  }
+  const int n = static_cast<int>(results_.size());
+  drawCheckMark(W / 2, 260, 150, gfx::kBlack);
+  canvas_.textCentered(fonts_, FontId::Bold, 72, "Geschafft!", W / 2, 470, gfx::kBlack);
+  const std::string lines[] = {
+    std::to_string(n) + " Zeichen geschrieben",
+    std::to_string(clean) + " davon fehlerfrei",
+    "Schreibqualität im Schnitt: " +
+      std::to_string(n ? int(std::lround(100 * quality / n)) : 0) + " %",
+  };
+  for (int i = 0; i < 3; i++) {
+    canvas_.textCentered(fonts_, FontId::Regular, 40, lines[i], W / 2, 580 + i * 62,
+                         gfx::kBlack);
+  }
+  if (!wrong.empty()) {
+    canvas_.textCentered(fonts_, FontId::Bold, 40, "Noch einmal üben:", W / 2, 860,
+                         gfx::kBlack);
+    const int per = 8, cell = 140;
+    for (size_t i = 0; i < wrong.size() && i < 24; i++) {
+      const int rowN = std::min<int>(per, static_cast<int>(wrong.size()) - int(i / per) * per);
+      const int x0 = W / 2 - rowN * cell / 2;
+      canvas_.textCentered(fonts_, FontId::Kana, 96, kana::all()[wrong[i]].glyph,
+                           x0 + int(i % per) * cell + cell / 2,
+                           1000 + int(i / per) * 140, gfx::kBlack);
+    }
+    drawButton(Rect::xywh(60, 1540, 1284, 130), "Fehler üben", true,
+               [this, wrong] { startSession(Mode::Practice, wrong); });
+  }
+  const Mode again = summaryMode_;
+  drawButton(Rect::xywh(60, 1700, 630, 130), "Nochmal", false,
+             [this, again] { startMode(again); });
+  drawButton(Rect::xywh(714, 1700, 630, 130), "Menü", wrong.empty(),
+             [this] { show(Screen::Home); });
+}
+
+void
+App::drawProgress() {
+  drawHeader("Fortschritt", "");
+  for (int i = 0; i < 2; i++) {
+    const auto s = static_cast<kana::Script>(i);
+    const Rect r = Rect::xywh(60 + i * 654, 140, 630, 90);
+    const bool sel = s == script_;
+    canvas_.roundRect(r, 16, sel ? gfx::kBlack : gfx::kWhite, 4, gfx::kBlack);
+    canvas_.textCentered(fonts_, FontId::Bold, 40, scriptName(s), r.cx(), r.cy() + 14,
+                         sel ? gfx::kWhite : gfx::kBlack);
+    buttons_.push_back({ r, [this, s] {
+                          script_ = s;
+                          redraw();
+                          invalidate(canvas_.rect(), Refresh::Ui);
+                        } });
+  }
+
+  const int today = platform_.today();
+  int learnt = 0, solid = 0, due = 0, total = 0;
+  int column = 0, row = 0;
+  for (const auto& g : kana::groups()) {
+    if (g.script != script_) {
+      continue;
+    }
+    const int gx = 60 + column * 654, gy = 330 + row * 172;
+    for (size_t i = 0; i < g.kana.size(); i++) {
+      const auto& k = kana::all()[g.kana[i]];
+      const auto c = progress_.get(k.glyph);
+      total++;
+      learnt += c.box > 0;
+      solid += c.box >= 4;
+      due += progress_.isDue(k.glyph, today);
+      const int cx = gx + 62 + int(i) * 126;
+      canvas_.textCentered(fonts_, FontId::Kana, 96, k.glyph, cx, gy + 100,
+                           c.box > 0 ? gfx::kBlack : gfx::kLight);
+      for (int b = 0; b < kana::Progress::kMaxBox; b++) {
+        const Rect seg = Rect::xywh(cx - 51 + b * 18, gy + 128, 14, 14);
+        if (b < c.box) {
+          canvas_.fill(seg, gfx::kBlack);
+        } else {
+          canvas_.frame(seg, 2, gfx::kLight);
+        }
+      }
+    }
+    if (++row == 8) {
+      row = 0;
+      column++;
+    }
+  }
+  const std::string summary = "Gelernt " + std::to_string(learnt) + " von " +
+                              std::to_string(total) + " · sicher " +
+                              std::to_string(solid) + " · heute fällig " +
+                              std::to_string(due);
+  canvas_.textCentered(fonts_, FontId::Regular, 36, summary, W / 2, 292, gfx::kBlack);
+  canvas_.textCentered(fonts_, FontId::Regular, 26,
+                       "Kästchen = Stufe in der Lernkartei (1–6). Grau = noch nicht gelernt.",
+                       W / 2, 1820, gfx::kDark);
+}
+
+void
+App::drawSystem() {
+  drawHeader("System", "");
+  drawButton(Rect::xywh(60, 180, 1284, 170), "Original reMarkable-Software starten", false,
+             [this] {
+               drawFeedback("Starte die Original-Software …", true);
+               flush();
+               platform_.startOriginalSoftware();
+             },
+             "bis zum nächsten Neustart – danach startet wieder Kana-Dojo");
+  drawButton(Rect::xywh(60, 380, 1284, 150), "Neu starten", false, [this] {
+    drawFeedback("Starte neu …", true);
+    flush();
+    platform_.reboot();
+  });
+  drawButton(Rect::xywh(60, 560, 1284, 150), "Ausschalten", false, [this] {
+    canvas_.fill(canvas_.rect(), gfx::kWhite);
+    canvas_.textCentered(fonts_, FontId::Kana, 150, "かな道場", W / 2, 820, gfx::kBlack);
+    canvas_.textCentered(fonts_, FontId::Regular, 52, "ausgeschaltet", W / 2, 960, gfx::kDark);
+    invalidate(canvas_.rect(), Refresh::Full);
+    flush();
+    platform_.powerOff();
+  });
+
+  const char* info[] = {
+    "Kana-Dojo 1.0 – Schreibtrainer für Hiragana und Katakana",
+    "Strichdaten: KanjiVG (Ulrich Apel, CC BY-SA 3.0)",
+    "Schriften: Klee One, Noto Sans (SIL Open Font License)",
+    "Display-Treiber: rm2fb / rM2-stuff von timower (GPL-3.0)",
+    "Ein-/Ausschaltknopf: Ruhezustand. Nach 10 Minuten ohne Eingabe schläft das Gerät.",
+  };
+  for (int i = 0; i < 5; i++) {
+    canvas_.text(fonts_, FontId::Regular, 30, info[i], 60, 860 + i * 56, gfx::kDark);
+  }
+}
+
+// ---------------------------------------------------------------- session --
+
+std::vector<int>
+App::selectedKana() const {
+  std::vector<int> out;
+  for (const auto& g : kana::groups()) {
+    if (g.script == script_ && groupSelected_[g.index]) {
+      out.insert(out.end(), g.kana.begin(), g.kana.end());
+    }
+  }
+  if (out.empty()) {
+    for (const auto& k : kana::all()) {
+      if (k.script == script_) {
+        out.push_back(k.index);
+      }
+    }
+  }
+  return out;
+}
+
+int
+App::dueCount() const {
+  const int today = platform_.today();
+  int n = 0;
+  for (int i : selectedKana()) {
+    n += progress_.isDue(kana::all()[i].glyph, today);
+  }
+  return n;
+}
+
+void
+App::startMode(Mode mode) {
+  std::vector<int> sel = selectedKana();
+  std::mt19937 rng(static_cast<uint32_t>(platform_.nowMs()));
+  std::vector<int> queue;
+  if (mode == Mode::Learn) {
+    queue = sel;
+  } else if (mode == Mode::Practice) {
+    std::shuffle(sel.begin(), sel.end(), rng);
+    sel.resize(std::min(sel.size(), kSessionSize));
+    queue = sel;
+  } else {
+    const int today = platform_.today();
+    std::vector<int> due, learnt;
+    for (int i : sel) {
+      const auto c = progress_.get(kana::all()[i].glyph);
+      if (c.box > 0 && c.dueDay <= today) {
+        due.push_back(i);
+      } else if (c.box > 0) {
+        learnt.push_back(i);
+      }
+    }
+    std::shuffle(due.begin(), due.end(), rng);
+    auto byBox = [this](int a, int b) {
+      return progress_.get(kana::all()[a].glyph).box <
+             progress_.get(kana::all()[b].glyph).box;
+    };
+    std::stable_sort(due.begin(), due.end(), byBox);
+    queue = due;
+    // Top up a short test with the weakest learnt kana.
+    std::shuffle(learnt.begin(), learnt.end(), rng);
+    std::stable_sort(learnt.begin(), learnt.end(), byBox);
+    for (int i : learnt) {
+      if (queue.size() >= 10) {
+        break;
+      }
+      queue.push_back(i);
+    }
+    if (queue.empty()) {
+      homeNotice_ = "Noch nichts gelernt – starte mit „Lernen“.";
+      redraw();
+      invalidate(canvas_.rect(), Refresh::Ui);
+      return;
+    }
+    if (queue.size() > kSessionSize) {
+      queue.resize(kSessionSize);
+    }
+    std::shuffle(queue.begin(), queue.end(), rng);
+  }
+  startSession(mode, queue);
+}
+
+void
+App::startSession(Mode mode, std::vector<int> queue) {
+  if (queue.empty()) {
+    return;
+  }
+  mode_ = mode;
+  summaryMode_ = mode;
+  queue_ = std::move(queue);
+  pos_ = 0;
+  results_.clear();
+  requeued_.clear();
+  kanaSinceFlash_ = 0;
+  loadKana();
+  show(Screen::Practice);
+}
+
+void
+App::loadKana() {
+  checker_ = std::make_unique<kana::Checker>(kana::all()[queue_[pos_]]);
+  inked_.clear();
+  current_.clear();
+  wrongStroke_.clear();
+  hintStroke_ = -1;
+  hintUsed_ = false;
+  kanaDone_ = false;
+  penInBox_ = false;
+  autoAdvanceAt_ = -1;
+}
+
+void
+App::nextKana() {
+  autoAdvanceAt_ = -1;
+  if (!kanaDone_) {
+    // Skipped: counts as not known.
+    const auto& k = kana::all()[queue_[pos_]];
+    if (mode_ == Mode::Test) {
+      progress_.recordTest(k.glyph, false, platform_.today());
+      progress_.save();
+    }
+    if (mode_ != Mode::Learn) {
+      results_.push_back({ k.index, 1, 0.f });
+    }
+  }
+  pos_++;
+  if (pos_ >= queue_.size()) {
+    show(Screen::Summary);
+    return;
+  }
+  loadKana();
+  redraw();
+  const bool flash = ++kanaSinceFlash_ >= kFlashEvery;
+  if (flash) {
+    kanaSinceFlash_ = 0;
+  }
+  invalidate(canvas_.rect(), flash ? Refresh::Full : Refresh::Ui);
+}
+
+void
+App::finishKana() {
+  kanaDone_ = true;
+  const auto& k = kana::all()[queue_[pos_]];
+  const int mistakes = checker_->mistakes() + (hintUsed_ ? 1 : 0);
+  const float quality = checker_->averageQuality();
+  const bool ok = mistakes == 0;
+  const int today = platform_.today();
+
+  switch (mode_) {
+    case Mode::Learn:
+      progress_.markLearnt(k.glyph, today);
+      break;
+    case Mode::Practice:
+      progress_.recordPractice(k.glyph, ok);
+      if (!ok && std::find(requeued_.begin(), requeued_.end(), k.index) == requeued_.end()) {
+        requeued_.push_back(k.index);
+        queue_.push_back(k.index);
+      }
+      break;
+    case Mode::Test:
+      progress_.recordTest(k.glyph, ok, today);
+      break;
+  }
+  progress_.save();
+  results_.push_back({ k.index, mistakes, quality });
+
+  std::string msg;
+  if (ok && quality >= 0.7f) {
+    msg = "Ausgezeichnet!";
+  } else if (ok) {
+    msg = "Richtig!";
+  } else {
+    msg = "Geschafft – mit " + std::to_string(mistakes) +
+          (mistakes == 1 ? " Fehler." : " Fehlern.");
+    if (mode_ != Mode::Test) {
+      msg += " Schreib es zur Übung nochmal.";
+    }
+  }
+  drawPrompt();
+  drawBox();
+  invalidate({ 0, 118, W, 462 }, Refresh::Ui);
+  invalidate(kBox, Refresh::Ui);
+  drawFeedback(msg, true);
+  if (ok) {
+    autoAdvanceAt_ = platform_.nowMs() + kAutoAdvanceMs;
+  }
+}
+
+void
+App::clearHint() {
+  if (wrongStroke_.empty() && hintStroke_ < 0) {
+    return;
+  }
+  wrongStroke_.clear();
+  hintStroke_ = -1;
+  drawBox();
+  invalidate(kBox, Refresh::Ui);
+}
+
+void
+App::handleStroke() {
+  const auto& k = kana::all()[queue_[pos_]];
+  kana::Line line;
+  for (const auto& [x, y] : current_) {
+    line.push_back(toRef(x, y));
+  }
+  const auto res = checker_->add(line);
+  const std::string n = std::to_string(res.expected + 1);
+
+  switch (res.kind) {
+    case kana::StrokeResult::Good:
+      inked_.push_back(current_);
+      current_.clear();
+      if (checker_->complete()) {
+        finishKana();
+        return;
+      }
+      if (mode_ == Mode::Learn) {
+        drawBox(); // moves the "next stroke" marker
+        invalidate(kBox, Refresh::Ui);
+      }
+      drawFeedback("Strich " + n + " von " + std::to_string(k.strokes.size()) + " richtig.",
+                   false);
+      return;
+    case kana::StrokeResult::Noise:
+    case kana::StrokeResult::Extra:
+      current_.clear();
+      drawBox();
+      invalidate(kBox, Refresh::Ui);
+      return;
+    case kana::StrokeResult::Reversed:
+      drawFeedback("Strich " + n + ": falsche Richtung. So geht's – nochmal!", true);
+      break;
+    case kana::StrokeResult::OtherStroke:
+      drawFeedback("Das war Strich " + std::to_string(res.matched + 1) + " – zuerst kommt Strich " +
+                     n + ".",
+                   true);
+      break;
+    case kana::StrokeResult::WrongShape:
+      drawFeedback("Strich " + n + " passt nicht. So geht's – nochmal!", true);
+      break;
+  }
+  wrongStroke_ = current_;
+  current_.clear();
+  hintStroke_ = res.expected;
+  drawBox();
+  invalidate(kBox, Refresh::Ui);
+}
+
+// ------------------------------------------------------------------ input --
+
+void
+App::penDown(float x, float y) {
+  lastInputMs_ = platform_.nowMs();
+  if (screen_ == Screen::Practice && inBox(x, y)) {
+    if (kanaDone_) {
+      if (mode_ == Mode::Test) {
+        return;
+      }
+      // Writing again after finishing = another round on the same kana.
+      loadKana();
+      drawPrompt();
+      drawBox();
+      invalidate({ 0, 118, W, 462 }, Refresh::Ui);
+      invalidate(kBox, Refresh::Ui);
+      drawFeedback("Noch einmal.", false);
+    }
+    autoAdvanceAt_ = -1;
+    clearHint();
+    penInBox_ = true;
+    current_ = { { x, y } };
+    invalidate(canvas_.disk(x, y, kInkWidth / 2, gfx::kBlack), Refresh::Ink);
+    return;
+  }
+  pressedButton_ = -1;
+  for (size_t i = 0; i < buttons_.size(); i++) {
+    if (buttons_[i].r.contains(int(x), int(y))) {
+      pressedButton_ = static_cast<int>(i);
+    }
+  }
+}
+
+void
+App::penMove(float x, float y) {
+  if (!penInBox_) {
+    return;
+  }
+  const Rect inner = kBox.inset(6);
+  x = std::max(float(inner.x0), std::min(float(inner.x1 - 1), x));
+  y = std::max(float(inner.y0), std::min(float(inner.y1 - 1), y));
+  const auto [px, py] = current_.back();
+  if (std::hypot(x - px, y - py) < 1.5f) {
+    return;
+  }
+  current_.emplace_back(x, y);
+  invalidate(canvas_.line(px, py, x, y, kInkWidth, gfx::kBlack), Refresh::Ink);
+}
+
+void
+App::penUp(float x, float y) {
+  lastInputMs_ = platform_.nowMs();
+  if (penInBox_) {
+    penInBox_ = false;
+    handleStroke();
+    return;
+  }
+  if (pressedButton_ >= 0 && pressedButton_ < static_cast<int>(buttons_.size()) &&
+      buttons_[pressedButton_].r.contains(int(x), int(y))) {
+    auto action = buttons_[pressedButton_].action;
+    pressedButton_ = -1;
+    action();
+  }
+  pressedButton_ = -1;
+}
+
+void
+App::touchTap(int x, int y) {
+  lastInputMs_ = platform_.nowMs();
+  if (penInBox_ || (screen_ == Screen::Practice && inBox(float(x), float(y)))) {
+    return; // palm on the writing area
+  }
+  for (const auto& b : buttons_) {
+    if (b.r.contains(x, y)) {
+      auto action = b.action;
+      action();
+      return;
+    }
+  }
+}
+
+void
+App::powerButton() {
+  sleep();
+}
+
+void
+App::sleep() {
+  penInBox_ = false;
+  current_.clear();
+  canvas_.fill(canvas_.rect(), gfx::kWhite);
+  canvas_.textCentered(fonts_, FontId::Kana, 150, "かな道場", W / 2, 820, gfx::kBlack);
+  canvas_.textCentered(fonts_, FontId::Regular, 52, "schläft", W / 2, 960, gfx::kDark);
+  canvas_.textCentered(fonts_, FontId::Regular, 32,
+                       "Zum Aufwecken den Einschaltknopf drücken", W / 2, 1040, gfx::kDark);
+  pending_.clear();
+  invalidate(canvas_.rect(), Refresh::Full);
+  flush();
+  platform_.suspend();
+  lastInputMs_ = platform_.nowMs();
+  redraw();
+  invalidate(canvas_.rect(), Refresh::Full);
+}
+
+void
+App::tick() {
+  const int64_t now = platform_.nowMs();
+  if (autoAdvanceAt_ >= 0 && now >= autoAdvanceAt_) {
+    nextKana();
+  }
+  if (now - lastInputMs_ >= kSleepAfterMs) {
+    sleep();
+  }
+}
+
+int64_t
+App::msUntilTimer() const {
+  const int64_t now = platform_.nowMs();
+  int64_t next = lastInputMs_ + kSleepAfterMs - now;
+  if (autoAdvanceAt_ >= 0) {
+    next = std::min(next, autoAdvanceAt_ - now);
+  }
+  return std::max<int64_t>(0, next);
+}
+
+} // namespace app

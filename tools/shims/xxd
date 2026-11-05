@@ -1,0 +1,13 @@
+#!/bin/sh
+# Minimal stand-in for `xxd -i <in> [out]` (only mode the rM2-stuff build uses).
+set -eu
+[ "$1" = "-i" ] || { echo "xxd shim: only -i is supported" >&2; exit 1; }
+in="$2"
+name=$(printf '%s' "$in" | sed 's/[^A-Za-z0-9]/_/g')
+emit() {
+  printf 'unsigned char %s[] = {\n' "$name"
+  od -An -v -tx1 "$in" | awk '{ for (i = 1; i <= NF; i++) { printf "%s0x%s", (n++ ? ", " : "  "), $i; if (n % 12 == 0) printf ",\n"; } }' |
+    sed 's/^, /  /' 
+  printf '\n};\nunsigned int %s_len = %s;\n' "$name" "$(wc -c < "$in" | tr -d ' ')"
+}
+if [ $# -ge 3 ]; then emit > "$3"; else emit; fi

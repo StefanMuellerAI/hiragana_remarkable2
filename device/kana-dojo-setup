@@ -1,0 +1,97 @@
+#!/bin/sh
+# Runs on the reMarkable 2. Usage: kana-dojo-setup install|uninstall|status
+#
+# Install only adds three systemd unit files under /etc/systemd/system and
+# switches the autostart from xochitl to Kana-Dojo. Uninstall reverses exactly
+# that. Nothing else on the system partition is touched.
+set -eu
+
+BASE=/home/root/kana-dojo
+UNITDIR=/etc/systemd/system
+UNITS="kana-dojo.service kana-dojo-display.service kana-dojo-fallback.service"
+SYSTEMCTL=$(command -v systemctl)
+
+remounted=0
+make_writable() {
+  if ! touch "$UNITDIR/.kana-dojo-test" 2>/dev/null; then
+    mount -o remount,rw /
+    remounted=1
+  fi
+  rm -f "$UNITDIR/.kana-dojo-test"
+}
+restore_mount() {
+  if [ "$remounted" = 1 ]; then
+    mount -o remount,ro / || true
+  fi
+}
+
+check_device() {
+  if ! grep -q "reMarkable 2" /sys/devices/soc0/machine 2>/dev/null; then
+    echo "Fehler: Das ist kein reMarkable 2 ($(cat /sys/devices/soc0/machine 2>/dev/null))." >&2
+    exit 1
+  fi
+  for f in bin/kana-dojo bin/rm2fb_server_swtcon share/glyphs.bin; do
+    if [ ! -e "$BASE/$f" ]; then
+      echo "Fehler: $BASE/$f fehlt." >&2
+      exit 1
+    fi
+  done
+}
+
+install_units() {
+  inhibit=""
+  if [ -x /usr/bin/systemd-inhibit ]; then
+    # Keeps systemd from powering off when the power button is pressed;
+    # Kana-Dojo handles the button itself (sleep mode).
+    inhibit="/usr/bin/systemd-inhibit --what=handle-power-key --who=kana-dojo --why=Ruhezustand --mode=block "
+  fi
+  for u in $UNITS; do
+    sed -e "s|@BASE@|$BASE|g" -e "s|@SYSTEMCTL@|$SYSTEMCTL|g" -e "s|@INHIBIT@|$inhibit|g" \
+      "$BASE/share/systemd/$u" > "$UNITDIR/$u"
+  done
+}
+
+case "${1:-}" in
+  install)
+    check_device
+    chmod +x "$BASE"/bin/*
+    make_writable
+    install_units
+    "$SYSTEMCTL" daemon-reload
+    "$SYSTEMCTL" disable xochitl.service >/dev/null 2>&1 || true
+    "$SYSTEMCTL" enable kana-dojo-display.service kana-dojo.service
+    restore_mount
+    "$SYSTEMCTL" stop xochitl.service || true
+    "$SYSTEMCTL" reset-failed kana-dojo.service kana-dojo-display.service >/dev/null 2>&1 || true
+    "$SYSTEMCTL" start kana-dojo.service
+    echo "Kana-Dojo ist installiert und startet ab jetzt automatisch."
+    ;;
+
+  uninstall)
+    "$SYSTEMCTL" stop kana-dojo.service kana-dojo-display.service >/dev/null 2>&1 || true
+    make_writable
+    "$SYSTEMCTL" disable kana-dojo.service kana-dojo-display.service >/dev/null 2>&1 || true
+    for u in $UNITS; do
+      rm -f "$UNITDIR/$u"
+    done
+    "$SYSTEMCTL" daemon-reload
+    "$SYSTEMCTL" enable xochitl.service
+    restore_mount
+    "$SYSTEMCTL" start xochitl.service
+    echo "Kana-Dojo ist deinstalliert, die Original-Software läuft wieder."
+    ;;
+
+  status)
+    echo "Gerät:     $(cat /sys/devices/soc0/machine 2>/dev/null)"
+    echo "Software:  $(grep -h REMARKABLE_RELEASE_VERSION /usr/share/remarkable/update.conf 2>/dev/null | cut -d= -f2)"
+    for u in xochitl.service kana-dojo-display.service kana-dojo.service; do
+      printf '%-28s %s / %s\n' "$u" "$("$SYSTEMCTL" is-enabled "$u" 2>/dev/null || true)" \
+        "$("$SYSTEMCTL" is-active "$u" 2>/dev/null || true)"
+    done
+    ;;
+
+  *)
+    echo "Aufruf: $0 install|uninstall|status" >&2
+    exit 2
+    ;;
+esac

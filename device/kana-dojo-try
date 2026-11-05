@@ -1,0 +1,45 @@
+#!/bin/sh
+# Runs on the reMarkable 2: starts Kana-Dojo once, without installing anything.
+# Ctrl+C (or unplugging the USB cable) ends it and the original software
+# comes back. A reboot also always returns to the original software.
+set -u
+
+BASE=/home/root/kana-dojo
+LOG=/tmp/kana-dojo-try.log
+
+SERVER_PID=""
+cleanup() {
+  trap - INT TERM HUP EXIT
+  pkill -f "$BASE/bin/kana-dojo" 2>/dev/null
+  [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null
+  sleep 1
+  systemctl start xochitl.service
+  echo
+  echo "Testlauf beendet, die Original-Software läuft wieder."
+  echo "Protokoll: $LOG"
+}
+trap cleanup INT TERM HUP EXIT
+
+chmod +x "$BASE"/bin/*
+echo "Stoppe die Original-Software ..."
+systemctl stop xochitl.service
+sleep 1
+
+echo "Starte den Bildschirm-Dienst ..."
+"$BASE/bin/rm2fb_server_swtcon" >"$LOG" 2>&1 &
+SERVER_PID=$!
+sleep 2
+if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+  echo "Der Bildschirm-Dienst ist sofort beendet worden. Letzte Zeilen:"
+  tail -n 15 "$LOG"
+  exit 1
+fi
+
+inhibit=""
+if [ -x /usr/bin/systemd-inhibit ]; then
+  inhibit="/usr/bin/systemd-inhibit --what=handle-power-key --who=kana-dojo --why=Testlauf --mode=block"
+fi
+
+echo "Kana-Dojo läuft auf dem reMarkable. Beenden mit Strg+C."
+$inhibit "$BASE/bin/kana-dojo" >>"$LOG" 2>&1
+echo "Kana-Dojo hat sich beendet."

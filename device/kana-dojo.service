@@ -1,0 +1,15 @@
+[Unit]
+Description=Kana-Dojo Schreibtrainer
+Requires=kana-dojo-display.service
+After=kana-dojo-display.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+OnFailure=kana-dojo-fallback.service
+
+[Service]
+ExecStart=@INHIBIT@@BASE@/bin/kana-dojo
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
