@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <random>
 #include <sstream>
 
@@ -20,6 +21,18 @@ constexpr int64_t kSleepAfterMs = 10 * 60 * 1000;
 constexpr int64_t kAutoAdvanceMs = 1300;
 constexpr int kFlashEvery = 6;
 constexpr size_t kSessionSize = 20;
+
+// Writing sheet layout: per line the model plus kSheetCols cells.
+constexpr int kSheetCell = 180; // about 2 cm on the tablet
+constexpr int kSheetCols = 6;
+constexpr int kSheetRows = 7; // lines per page
+constexpr int kSheetX0 = (W - (kSheetCols + 1) * kSheetCell) / 2;
+constexpr int kSheetY0 = 132;
+constexpr int kSheetPitch = 210;
+constexpr int kSheetSpill = 10; // ink may leave its cell by this much
+constexpr float kSheetInk = 6.f;
+constexpr int kSheetFlashEvery = 3;
+const char* const kSheetHelp = "Schreib das Zeichen in die freien Kästchen seiner Zeile.";
 
 const char* const kModeNames[] = { "Lernen", "Üben", "Test" };
 
@@ -71,6 +84,8 @@ App::screenName() const {
       return "progress";
     case Screen::System:
       return "system";
+    case Screen::Sheet:
+      return "sheet";
   }
   return "?";
 }
@@ -138,6 +153,9 @@ App::redraw() {
       break;
     case Screen::System:
       drawSystem();
+      break;
+    case Screen::Sheet:
+      drawSheet();
       break;
   }
 }
@@ -265,43 +283,45 @@ App::drawHome() {
   }
 
   // Modes
-  canvas_.text(fonts_, FontId::Bold, 32, "Üben", 60, 1052, gfx::kBlack);
+  canvas_.text(fonts_, FontId::Bold, 32, "Üben", 60, 1046, gfx::kBlack);
   const int n = static_cast<int>(selectedKana().size());
   const int due = dueCount();
   struct ModeInfo {
-    Mode mode;
     const char* title;
     const char* desc;
     std::string right;
+    std::function<void()> action;
   };
   const ModeInfo modes[] = {
-    { Mode::Learn, "Lernen", "Mit Vorlage nachfahren, Strich für Strich",
-      std::to_string(n) + " Zeichen" },
-    { Mode::Practice, "Üben", "Aus dem Gedächtnis schreiben, mit Korrektur",
-      std::to_string(std::min<int>(n, kSessionSize)) + " Zeichen" },
-    { Mode::Test, "Test", "Lernkartei: fällige Zeichen wiederholen",
-      std::to_string(due) + " fällig" },
+    { "Lernen", "Mit Vorlage nachfahren, Strich für Strich",
+      std::to_string(n) + " Zeichen", [this] { startMode(Mode::Learn); } },
+    { "Üben", "Aus dem Gedächtnis schreiben, mit Korrektur",
+      std::to_string(std::min<int>(n, kSessionSize)) + " Zeichen",
+      [this] { startMode(Mode::Practice); } },
+    { "Test", "Lernkartei: fällige Zeichen wiederholen", std::to_string(due) + " fällig",
+      [this] { startMode(Mode::Test); } },
+    { "Schreibblatt", "Zeile für Zeile schreiben – Fehler werden gelöscht",
+      std::to_string(n) + " Zeilen", [this] { openSheet(); } },
   };
-  for (int i = 0; i < 3; i++) {
-    const Rect r = Rect::xywh(60, 1076 + i * 190, 1284, 170);
+  for (int i = 0; i < 4; i++) {
+    const Rect r = Rect::xywh(60, 1066 + i * 150, 1284, 138);
     canvas_.roundRect(r, 18, gfx::kWhite, 4, gfx::kBlack);
-    canvas_.text(fonts_, FontId::Bold, 52, modes[i].title, r.x0 + 40, r.y0 + 78, gfx::kBlack);
-    canvas_.text(fonts_, FontId::Regular, 32, modes[i].desc, r.x0 + 40, r.y0 + 132, gfx::kDark);
+    canvas_.text(fonts_, FontId::Bold, 52, modes[i].title, r.x0 + 40, r.y0 + 66, gfx::kBlack);
+    canvas_.text(fonts_, FontId::Regular, 32, modes[i].desc, r.x0 + 40, r.y0 + 114, gfx::kDark);
     const int w = fonts_.textWidth(FontId::Bold, 40, modes[i].right);
-    canvas_.text(fonts_, FontId::Bold, 40, modes[i].right, r.x1 - 50 - w, r.y0 + 100,
+    canvas_.text(fonts_, FontId::Bold, 40, modes[i].right, r.x1 - 50 - w, r.y0 + 86,
                  gfx::kBlack);
-    const Mode m = modes[i].mode;
-    buttons_.push_back({ r, [this, m] { startMode(m); } });
+    buttons_.push_back({ r, modes[i].action });
   }
 
   if (!homeNotice_.empty()) {
-    canvas_.textCentered(fonts_, FontId::Bold, 32, homeNotice_, W / 2, 1668, gfx::kBlack);
+    canvas_.textCentered(fonts_, FontId::Bold, 32, homeNotice_, W / 2, 1694, gfx::kBlack);
     homeNotice_.clear();
   }
 
-  drawButton(Rect::xywh(60, 1690, 630, 130), "Fortschritt", false,
+  drawButton(Rect::xywh(60, 1716, 630, 126), "Fortschritt", false,
              [this] { show(Screen::Progress); });
-  drawButton(Rect::xywh(714, 1690, 630, 130), "System", false,
+  drawButton(Rect::xywh(714, 1716, 630, 126), "System", false,
              [this] { show(Screen::System); });
 }
 
@@ -390,9 +410,16 @@ App::inBox(float x, float y) const {
 
 void
 App::drawRefStroke(const kana::Line& ref, float width, uint8_t v, bool arrow) {
+  drawRefStrokeIn(ref, kBox, width, v, arrow);
+}
+
+void
+App::drawRefStrokeIn(const kana::Line& ref, Rect box, float width, uint8_t v,
+                     bool arrow) {
+  const float s = box.w() / kana::kGlyphSize;
   std::vector<std::pair<float, float>> pts;
   for (const auto& p : ref) {
-    pts.push_back(toScreen(p));
+    pts.emplace_back(box.x0 + p.x * s, box.y0 + p.y * s);
   }
   canvas_.polyline(pts, width, v, true);
   canvas_.disk(pts.front().first, pts.front().second, width * 1.1f, v);
@@ -457,6 +484,7 @@ App::drawBox() {
 
 void
 App::drawFeedback(const std::string& msg, bool bold) {
+  message_ = msg;
   canvas_.fill(kFeedback, gfx::kWhite);
   canvas_.textCentered(fonts_, bold ? FontId::Bold : FontId::Regular, 40, msg, W / 2,
                        1662, gfx::kBlack);
@@ -629,7 +657,7 @@ App::drawSystem() {
   });
 
   const char* info[] = {
-    "Kana-Dojo 1.0 – Schreibtrainer für Hiragana und Katakana",
+    "Kana-Dojo 1.1 – Schreibtrainer für Hiragana und Katakana",
     "Strichdaten: KanjiVG (Ulrich Apel, CC BY-SA 3.0)",
     "Schriften: Klee One, Noto Sans (SIL Open Font License)",
     "Display-Treiber: rm2fb / rM2-stuff von timower (GPL-3.0)",
@@ -848,6 +876,11 @@ App::handleStroke() {
   }
   const auto res = checker_->add(line);
   const std::string n = std::to_string(res.expected + 1);
+  // One line per stroke in the log, to diagnose pen problems remotely.
+  std::fprintf(stderr, "stroke %s #%d -> %s (start %.0f,%.0f end %.0f,%.0f, %zu pts)\n",
+               k.glyph.c_str(), res.expected + 1, kana::describe(res.kind),
+               current_.front().first, current_.front().second, current_.back().first,
+               current_.back().second, current_.size());
 
   switch (res.kind) {
     case kana::StrokeResult::Good:
@@ -889,11 +922,335 @@ App::handleStroke() {
   invalidate(kBox, Refresh::Ui);
 }
 
+// ------------------------------------------------------------------ sheet --
+
+std::string
+App::kanaName(const kana::Kana& k) const {
+  if (k.romaji == "-") {
+    return "„Langvokal-Strich“";
+  }
+  if (kana::groups()[k.group].name == "klein") {
+    return "„klein " + k.romaji + "“";
+  }
+  return "„" + k.romaji + "“";
+}
+
+int
+App::sheetCorrect() const {
+  int n = 0;
+  for (const auto& line : sheet_) {
+    for (const auto& c : line.cells) {
+      n += c.done;
+    }
+  }
+  return n;
+}
+
+void
+App::openSheet() {
+  sheet_.clear();
+  for (int i : selectedKana()) {
+    SheetLine line;
+    line.kana = i;
+    line.cells.resize(kSheetCols + 1);
+    sheet_.push_back(std::move(line));
+  }
+  sheetTop_ = 0;
+  sheetPen_ = false;
+  sheetPenLine_ = sheetPenCell_ = -1;
+  activeLine_ = activeCell_ = -1;
+  sheetHintLine_ = sheetHintStroke_ = -1;
+  sheetMessageShown_ = false;
+  sheetPagesSinceFlash_ = 0;
+  message_.clear();
+  current_.clear();
+  show(Screen::Sheet);
+}
+
+bool
+App::sheetVisible(int line) const {
+  return line >= sheetTop_ && line < sheetTop_ + kSheetRows &&
+         line < static_cast<int>(sheet_.size());
+}
+
+Rect
+App::sheetCellRect(int line, int cell) const {
+  const int row = line - sheetTop_;
+  return Rect::xywh(kSheetX0 + cell * kSheetCell, kSheetY0 + row * kSheetPitch, kSheetCell,
+                    kSheetCell);
+}
+
+Rect
+App::sheetBand(int line) const {
+  const int gap = (kSheetPitch - kSheetCell) / 2;
+  const int y = kSheetY0 + (line - sheetTop_) * kSheetPitch;
+  return { 0, y - gap, W, y + kSheetCell + gap };
+}
+
+Rect
+App::sheetGrid() const {
+  return { kSheetX0 - kSheetSpill, kSheetY0 - kSheetSpill,
+           kSheetX0 + (kSheetCols + 1) * kSheetCell + kSheetSpill,
+           kSheetY0 + (kSheetRows - 1) * kSheetPitch + kSheetCell + kSheetSpill };
+}
+
+bool
+App::sheetHit(float x, float y, int& line, int& cell) const {
+  for (int row = 0; row < kSheetRows; row++) {
+    const int l = sheetTop_ + row;
+    if (l >= static_cast<int>(sheet_.size())) {
+      break;
+    }
+    const int y0 = kSheetY0 + row * kSheetPitch;
+    const Rect r = { kSheetX0, y0, kSheetX0 + (kSheetCols + 1) * kSheetCell, y0 + kSheetCell };
+    if (r.contains(int(x), int(y))) {
+      line = l;
+      cell = (int(x) - kSheetX0) / kSheetCell;
+      return true;
+    }
+  }
+  return false;
+}
+
+Rect
+App::drawSheetLine(int line) {
+  if (!sheetVisible(line)) {
+    return {};
+  }
+  const Rect band = sheetBand(line);
+  canvas_.fill(band, gfx::kWhite);
+  const auto& L = sheet_[line];
+  const auto& k = kana::all()[L.kana];
+  const int strokes = static_cast<int>(k.strokes.size());
+
+  // The model, written once at the start of the line. After a mistake it
+  // shows the stroke that was due, with its direction.
+  const Rect model = sheetCellRect(line, 0);
+  canvas_.fill(model, gfx::kFaint);
+  if (k.romaji != "-") {
+    const std::string label =
+      kana::groups()[k.group].name == "klein" ? "klein " + k.romaji : k.romaji;
+    canvas_.text(fonts_, FontId::Regular, 26, label, model.x0 + 10, model.y0 + 30, gfx::kDark);
+  }
+  if (line == sheetHintLine_ && sheetHintStroke_ >= 0 && sheetHintStroke_ < strokes) {
+    drawKanaStrokes(k, model, strokes, -1, 7.f, gfx::kLight, gfx::kLight);
+    drawRefStrokeIn(k.strokes[sheetHintStroke_].points, model, 8.f, gfx::kBlack, true);
+  } else {
+    drawKanaStrokes(k, model, strokes, -1, 8.f, gfx::kBlack, gfx::kBlack);
+  }
+
+  // Empty cells with a light centre cross, like a practice sheet.
+  for (int c = 1; c <= kSheetCols; c++) {
+    const Rect r = sheetCellRect(line, c);
+    canvas_.dashedLine(r.cx(), r.y0 + 6, r.cx(), r.y1 - 6, 10, 2, gfx::kLight);
+    canvas_.dashedLine(r.x0 + 6, r.cy(), r.x1 - 6, r.cy(), 10, 2, gfx::kLight);
+    canvas_.frame(r, 1, gfx::kMid);
+  }
+  canvas_.frame({ model.x0, model.y0, model.x0 + (kSheetCols + 1) * kSheetCell, model.y1 }, 3,
+                gfx::kDark);
+  canvas_.fill({ model.x1 - 1, model.y0, model.x1 + 2, model.y1 }, gfx::kDark);
+
+  for (int c = 1; c <= kSheetCols; c++) {
+    const auto& cell = L.cells[c];
+    for (const auto& stroke : cell.ink) {
+      canvas_.polyline(stroke, kSheetInk, gfx::kBlack);
+    }
+    if (cell.done) {
+      const Rect r = sheetCellRect(line, c);
+      drawCheckMark(r.x1 - 22, r.y0 + 20, 22, gfx::kDark);
+    }
+  }
+  return band;
+}
+
+void
+App::drawSheet() {
+  const int total = static_cast<int>(sheet_.size());
+  const int pages = std::max(1, (total + kSheetRows - 1) / kSheetRows);
+  const int page = sheetTop_ / kSheetRows + 1;
+  drawHeader("Schreibblatt · " + scriptName(script_), "");
+  for (int row = 0; row < kSheetRows; row++) {
+    drawSheetLine(sheetTop_ + row);
+  }
+  drawFeedback(message_.empty() ? kSheetHelp : message_, sheetMessageShown_);
+
+  auto nav = [this](Rect r, const std::string& label, bool enabled, bool primary,
+                    std::function<void()> action) {
+    if (enabled) {
+      drawButton(r, label, primary, std::move(action));
+    } else {
+      canvas_.roundRect(r, 18, gfx::kWhite, 3, gfx::kLight);
+      canvas_.textCentered(fonts_, FontId::Bold, 40, label, r.cx(), r.cy() + 14, gfx::kLight);
+    }
+  };
+  nav(Rect::xywh(52, 1722, 400, 120), "‹ Zurück", page > 1, false, [this] { sheetPage(-1); });
+  canvas_.textCentered(fonts_, FontId::Regular, 40,
+                       "Seite " + std::to_string(page) + " / " + std::to_string(pages), W / 2,
+                       1780, gfx::kBlack);
+  canvas_.textCentered(fonts_, FontId::Regular, 26, "oder mit dem Finger wischen", W / 2, 1826,
+                       gfx::kDark);
+  nav(Rect::xywh(952, 1722, 400, 120), "Weiter ›", page < pages, true, [this] { sheetPage(1); });
+}
+
+void
+App::sheetPage(int delta) {
+  const int total = static_cast<int>(sheet_.size());
+  if (total == 0) {
+    return;
+  }
+  const int last = ((total - 1) / kSheetRows) * kSheetRows;
+  const int top = std::max(0, std::min(last, sheetTop_ + delta * kSheetRows));
+  if (top == sheetTop_) {
+    return;
+  }
+  sheetTop_ = top;
+  sheetPen_ = false;
+  current_.clear();
+  sheetHintLine_ = sheetHintStroke_ = -1;
+  sheetMessageShown_ = false;
+  message_.clear();
+  redraw();
+  const bool flash = ++sheetPagesSinceFlash_ >= kSheetFlashEvery;
+  if (flash) {
+    sheetPagesSinceFlash_ = 0;
+  }
+  invalidate(canvas_.rect(), flash ? Refresh::Full : Refresh::Ui);
+}
+
+void
+App::sheetMessage(const std::string& msg, bool bold) {
+  drawFeedback(msg, bold);
+  sheetMessageShown_ = bold;
+}
+
+void
+App::eraseSheetCell(int line, int cell) {
+  auto& c = sheet_[line].cells[cell];
+  c.ink.clear();
+  c.checker.reset();
+  c.done = false;
+  if (line == activeLine_ && cell == activeCell_) {
+    activeLine_ = activeCell_ = -1;
+  }
+  invalidate(drawSheetLine(line), Refresh::Ui);
+}
+
+void
+App::handleSheetStroke() {
+  const int line = sheetPenLine_, c = sheetPenCell_;
+  sheetPenLine_ = sheetPenCell_ = -1;
+  if (line < 0 || line >= static_cast<int>(sheet_.size()) || c < 1 || c > kSheetCols) {
+    current_.clear();
+    return;
+  }
+  auto& cell = sheet_[line].cells[c];
+  const auto& k = kana::all()[sheet_[line].kana];
+  const Rect r = sheetCellRect(line, c);
+  const float s = kSheetCell / kana::kGlyphSize;
+  kana::Line stroke;
+  for (const auto& [x, y] : current_) {
+    stroke.push_back({ (x - r.x0) / s, (y - r.y0) / s });
+  }
+  if (!cell.checker) {
+    cell.checker = std::make_unique<kana::Checker>(k);
+  }
+  const auto res = cell.checker->add(stroke);
+  std::fprintf(stderr,
+               "sheet %s line %d cell %d stroke #%d -> %s (start %.0f,%.0f end %.0f,%.0f, %zu pts)\n",
+               k.glyph.c_str(), line + 1, c, res.expected + 1, kana::describe(res.kind),
+               current_.front().first, current_.front().second, current_.back().first,
+               current_.back().second, current_.size());
+
+  if (res.kind == kana::StrokeResult::Noise || res.kind == kana::StrokeResult::Extra) {
+    current_.clear();
+    invalidate(drawSheetLine(line), Refresh::Ui); // removes the dot
+    return;
+  }
+
+  // Starting somewhere else ends the kana that was left half-written.
+  std::string abandoned;
+  if (activeLine_ >= 0 && (activeLine_ != line || activeCell_ != c)) {
+    abandoned =
+      kanaName(kana::all()[sheet_[activeLine_].kana]) + " war noch nicht fertig – gelöscht.";
+    eraseSheetCell(activeLine_, activeCell_);
+  }
+  // The stroke hint belongs to the line being worked on.
+  if (sheetHintLine_ >= 0 && sheetHintLine_ != line) {
+    const int old = sheetHintLine_;
+    sheetHintLine_ = sheetHintStroke_ = -1;
+    invalidate(drawSheetLine(old), Refresh::Ui);
+  }
+
+  if (res.kind == kana::StrokeResult::Good) {
+    cell.ink.push_back(current_);
+    current_.clear();
+    if (cell.checker->complete()) {
+      cell.done = true;
+      activeLine_ = activeCell_ = -1;
+      if (sheetHintLine_ == line) {
+        sheetHintLine_ = sheetHintStroke_ = -1;
+      }
+      invalidate(drawSheetLine(line), Refresh::Ui);
+    } else {
+      activeLine_ = line;
+      activeCell_ = c;
+    }
+    if (!abandoned.empty()) {
+      sheetMessage(abandoned, true);
+    }
+    return;
+  }
+
+  // Wrong stroke: the whole kana in this cell doesn't count.
+  const std::string n = std::to_string(res.expected + 1);
+  const std::string name = kanaName(k);
+  std::string msg;
+  switch (res.kind) {
+    case kana::StrokeResult::Reversed:
+      msg = name + " Strich " + n + ": falsche Richtung – gelöscht.";
+      break;
+    case kana::StrokeResult::OtherStroke:
+      msg = name + ": Das war Strich " + std::to_string(res.matched + 1) +
+            " – zuerst kommt Strich " + n + ". Gelöscht.";
+      break;
+    default:
+      msg = name + " Strich " + n + " passt nicht – gelöscht.";
+      break;
+  }
+  current_.clear();
+  cell.ink.clear();
+  cell.checker.reset();
+  cell.done = false;
+  if (activeLine_ == line && activeCell_ == c) {
+    activeLine_ = activeCell_ = -1;
+  }
+  sheetHintLine_ = line;
+  sheetHintStroke_ = res.expected;
+  invalidate(drawSheetLine(line), Refresh::Ui);
+  sheetMessage(msg, true);
+}
+
 // ------------------------------------------------------------------ input --
 
 void
 App::penDown(float x, float y) {
   lastInputMs_ = platform_.nowMs();
+  int line = -1, cell = -1;
+  if (screen_ == Screen::Sheet && sheetHit(x, y, line, cell)) {
+    pressedButton_ = -1;
+    if (cell < 1 || sheet_[line].cells[cell].done) {
+      return; // the model and finished kana can't be written over
+    }
+    if (sheetMessageShown_) {
+      sheetMessage(kSheetHelp, false);
+    }
+    sheetPen_ = true;
+    sheetPenLine_ = line;
+    sheetPenCell_ = cell;
+    current_ = { { x, y } };
+    invalidate(canvas_.disk(x, y, kSheetInk / 2, gfx::kBlack), Refresh::Ink);
+    return;
+  }
   if (screen_ == Screen::Practice && inBox(x, y)) {
     if (kanaDone_) {
       if (mode_ == Mode::Test) {
@@ -924,6 +1281,18 @@ App::penDown(float x, float y) {
 
 void
 App::penMove(float x, float y) {
+  if (sheetPen_) {
+    const Rect r = sheetCellRect(sheetPenLine_, sheetPenCell_).inset(-kSheetSpill);
+    x = std::max(float(r.x0), std::min(float(r.x1 - 1), x));
+    y = std::max(float(r.y0), std::min(float(r.y1 - 1), y));
+    const auto [px, py] = current_.back();
+    if (std::hypot(x - px, y - py) < 1.f) {
+      return;
+    }
+    current_.emplace_back(x, y);
+    invalidate(canvas_.line(px, py, x, y, kSheetInk, gfx::kBlack), Refresh::Ink);
+    return;
+  }
   if (!penInBox_) {
     return;
   }
@@ -941,6 +1310,11 @@ App::penMove(float x, float y) {
 void
 App::penUp(float x, float y) {
   lastInputMs_ = platform_.nowMs();
+  if (sheetPen_) {
+    sheetPen_ = false;
+    handleSheetStroke();
+    return;
+  }
   if (penInBox_) {
     penInBox_ = false;
     handleStroke();
@@ -961,6 +1335,9 @@ App::touchTap(int x, int y) {
   if (penInBox_ || (screen_ == Screen::Practice && inBox(float(x), float(y)))) {
     return; // palm on the writing area
   }
+  if (sheetPen_ || (screen_ == Screen::Sheet && sheetGrid().contains(x, y))) {
+    return;
+  }
   for (const auto& b : buttons_) {
     if (b.r.contains(x, y)) {
       auto action = b.action;
@@ -971,6 +1348,18 @@ App::touchTap(int x, int y) {
 }
 
 void
+App::touchSwipe(int dx, int dy) {
+  lastInputMs_ = platform_.nowMs();
+  if (screen_ != Screen::Sheet || sheetPen_) {
+    return;
+  }
+  if (std::abs(dy) < 150 || std::abs(dy) < 2 * std::abs(dx)) {
+    return; // not a clear vertical swipe
+  }
+  sheetPage(dy < 0 ? 1 : -1); // finger up = further down the sheet
+}
+
+void
 App::powerButton() {
   sleep();
 }
@@ -978,6 +1367,8 @@ App::powerButton() {
 void
 App::sleep() {
   penInBox_ = false;
+  sheetPen_ = false;
+  sheetPenLine_ = sheetPenCell_ = -1;
   current_.clear();
   canvas_.fill(canvas_.rect(), gfx::kWhite);
   canvas_.textCentered(fonts_, FontId::Kana, 150, "かな道場", W / 2, 820, gfx::kBlack);

@@ -156,7 +156,9 @@ def main():
     server = FakeServer(os.path.join(tmp, "rm2fb.sock"))
     server.start()
     dev = Devices(tmp)
+    shot = os.path.join(tmp, "screen.bmp")
     env = dict(os.environ, KANA_DOJO_SOCKET=server.path, KANA_DOJO_DRY_RUN="1",
+               KANA_DOJO_SCREENSHOT=shot,
                KANA_DOJO_INPUT_PEN=dev.paths["pen"], KANA_DOJO_INPUT_TOUCH=dev.paths["touch"],
                KANA_DOJO_INPUT_POWER=dev.paths["power"])
     proc = subprocess.Popen(["qemu-arm-static", str(root / "bin/kana-dojo")], env=env,
@@ -185,6 +187,22 @@ def main():
         check(len(server.inputs) == 3, f"opened 3 input devices via server ({len(server.inputs)})")
         check(any(u[0] == 2 and u[1] & 1 for u in server.updates), "first frame is a full GC16 sync update")
         server.snapshot(outdir / "it-01-home.png")
+
+        import signal
+        from PIL import Image, ImageChops
+        os.kill(proc.pid, signal.SIGUSR1)
+        for _ in range(50):
+            if os.path.exists(shot):
+                break
+            time.sleep(0.1)
+        ok = os.path.exists(shot)
+        if ok:
+            bmp = Image.open(shot).convert("L")
+            fb = Image.open(outdir / "it-01-home.png").convert("L")
+            # The panel buffer is RGB565, so allow the 6-bit grey rounding.
+            diff = ImageChops.difference(bmp, fb).getextrema()[1]
+            ok = bmp.size == (W, H) and diff <= 4
+        check(ok, "SIGUSR1 writes a screenshot matching the screen")
 
         dev.tap(700, 1160)  # Lernen
         settle()

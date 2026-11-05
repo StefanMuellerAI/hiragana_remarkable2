@@ -7,6 +7,10 @@ Richtung, Reihenfolge und Form. Bei einem Fehler zeigt sie dir den richtigen Str
 - **Lernen** – Zeichen mit grauer Vorlage nachfahren, mit Strichnummern und Strichfolge-Leiste.
 - **Üben** – aus dem Gedächtnis schreiben (nur die Lautschrift wird angezeigt), mit Korrektur und „Tipp“-Knopf.
 - **Test** – Lernkartei mit 6 Stufen: fällige Zeichen werden wiederholt, Fehler schicken ein Zeichen zurück auf Stufe 1.
+- **Schreibblatt** – wie ein Übungsblatt: pro Zeile ein Zeichen als Vorlage und 6 Kästchen (ca. 2 cm) zum Wiederholen.
+  Jedes Zeichen wird Strich für Strich geprüft; bei falscher Reihenfolge, Richtung oder Form wird es gelöscht
+  und die Vorlage zeigt den richtigen Strich mit Pfeil. Nur richtig geschriebene Zeichen bleiben stehen.
+  Blättern mit den Knöpfen oder per Wischen mit dem Finger. Beim Verlassen wird das Blatt geleert, der Lernstand bleibt unberührt.
 - **Fortschritt** – Übersicht aller 151 Zeichen (Hiragana, Katakana, mit Dakuten, kleine Kana, ー) mit Lernstufe.
 - Einschaltknopf = Ruhezustand, nach 10 Minuten ohne Eingabe schläft das Gerät automatisch.
 
@@ -35,6 +39,13 @@ Das **SSH-Passwort** steht auf dem reMarkable unter
 *Einstellungen → Hilfe → Über → Copyrights und Lizenzen*, ganz unten im Abschnitt „GPLv3 Compliance“.
 Jedes Skript fragt einmal danach. (Je nach Software-Version kann der Menüpfad leicht anders heißen.)
 
+**Optional: SSH-Schlüssel einrichten** – danach fragt kein Skript mehr nach dem Passwort
+(und Claude kann auf deinem Mac ohne Passwort-Eingabe mit dem Gerät arbeiten):
+
+```bash
+bash mac/0-schluessel-einrichten.sh
+```
+
 **1. Verbindung prüfen** – ändert nichts, zeigt Gerät und Software-Version:
 
 ```bash
@@ -59,6 +70,27 @@ bash mac/3-testlauf.sh
 ```bash
 bash mac/4-installieren.sh
 ```
+
+**Bei Problemen: Diagnose** – zeigt Status und Protokoll (eine Zeile pro geschriebenem Strich)
+und holt einen Screenshot vom Gerät auf den Mac. Ändert nichts:
+
+```bash
+bash mac/6-diagnose.sh
+```
+
+## Installation zusammen mit Claude
+
+Claude kann die Schritte oben auch selbst ausführen und dabei mittesten (Protokoll und Screenshots
+lesen, während du auf dem Gerät schreibst). Dafür braucht Claude Zugriff auf deinen Mac, weil der
+reMarkable dort per USB hängt:
+
+- **Ordner freigeben:** in der Claude-Desktop-App unter *Einstellungen → Claude Code → Remote Control*
+  den Ordner mit diesem Repo freigeben. Eine Cloud-Sitzung kann ihn dann nutzen.
+  (Nicht für alle Konten schon verfügbar.)
+- **Oder lokal arbeiten:** eine Claude-Code-Sitzung direkt auf dem Mac in diesem Ordner starten
+  (Claude-Desktop-App oder `claude` im Terminal).
+
+Vorher einmal `bash mac/0-schluessel-einrichten.sh` ausführen, damit Claude kein Passwort braucht.
 
 ## Zurück zur Original-Software
 
@@ -106,7 +138,8 @@ app/tests/      checker_test.cpp   Prüflogik mit simulierten Handschriften
                 real_server_test.py ARM-App gegen den echten Bildschirm-Dienst (qemu)
 tools/          Generatoren für Strichdaten und Schriften, xxd-Ersatz für den Build
 device/         Dienst-Dateien und Skripte, die auf dem Gerät landen
-mac/            Skripte für den Mac (Verbindung, Backup, Testlauf, Installation, Deinstallation)
+mac/            Skripte für den Mac (Schlüssel, Verbindung, Backup, Testlauf, Installation,
+                Deinstallation, Diagnose)
 patches/        eigene Änderungen am Bildschirm-Dienst
 third_party/rM2-stuff   Bildschirm-Dienst (Git-Submodul, Commit 451577081b9e)
 ```
