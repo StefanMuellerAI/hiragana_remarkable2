@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #include <fstream>
 #include <poll.h>
+#include <csignal>
 #include <string>
 #include <sys/mman.h>
 #include <sys/socket.h>
@@ -379,6 +380,50 @@ struct TouchSlot {
   bool changed = false;
 };
 
+volatile std::sig_atomic_t screenshotRequested = 0;
+
+void
+onScreenshotSignal(int) {
+  screenshotRequested = 1;
+}
+
+// `kill -USR1 <pid>` writes the current screen as an 8-bit BMP, so the
+// screen can be checked from a computer without looking at the tablet.
+void
+writeScreenshot(const gfx::Canvas& c, const char* path) {
+  const int w = c.width(), h = c.height();
+  const uint32_t palette = 256 * 4, header = 14 + 40 + palette;
+  const uint32_t size = header + uint32_t(w) * h; // rows are already 4-byte aligned
+  std::vector<uint8_t> out(header, 0);
+  auto put16 = [&](size_t at, uint16_t v) { std::memcpy(&out[at], &v, 2); };
+  auto put32 = [&](size_t at, uint32_t v) { std::memcpy(&out[at], &v, 4); };
+  out[0] = 'B';
+  out[1] = 'M';
+  put32(2, size);
+  put32(10, header);
+  put32(14, 40);
+  put32(18, uint32_t(w));
+  put32(22, uint32_t(h)); // positive height: bottom-up rows
+  put16(26, 1);
+  put16(28, 8);
+  put32(46, 256);
+  for (int i = 0; i < 256; i++) {
+    out[54 + i * 4] = out[54 + i * 4 + 1] = out[54 + i * 4 + 2] = uint8_t(i);
+  }
+  const std::string tmp = std::string(path) + ".tmp";
+  FILE* f = std::fopen(tmp.c_str(), "wb");
+  if (f == nullptr) {
+    return;
+  }
+  std::fwrite(out.data(), 1, out.size(), f);
+  for (int y = h - 1; y >= 0; y--) {
+    std::fwrite(c.data() + size_t(y) * w, 1, size_t(w), f);
+  }
+  std::fclose(f);
+  std::rename(tmp.c_str(), path);
+  std::fprintf(stderr, "kana-dojo: screenshot written to %s\n", path);
+}
+
 } // namespace
 
 int
@@ -422,9 +467,11 @@ main() {
       std::fprintf(stderr, "kana-dojo: input '%s' not available\n", name);
       continue;
     }
+    std::fprintf(stderr, "kana-dojo: input '%s' = %s\n", name, path.c_str());
     sources.push_back({ fd, kind });
   }
 
+  std::signal(SIGUSR1, onScreenshotSignal);
   application.start();
   application.flush();
 
@@ -534,5 +581,9 @@ main() {
     }
     application.tick();
     application.flush();
+    if (screenshotRequested != 0) {
+      screenshotRequested = 0;
+      writeScreenshot(application.canvas(), envOr("KANA_DOJO_SCREENSHOT", "/tmp/kana-dojo-screen.bmp").c_str());
+    }
   }
 }

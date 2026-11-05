@@ -5,6 +5,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 RM_HOST="${RM_HOST:-10.11.99.1}"
 PAYLOAD="$ROOT/dist/kana-dojo"
+RM_KEY="$HOME/.ssh/kana_dojo_remarkable" # created by 0-schluessel-einrichten.sh
 
 # One SSH connection per script run, so the password is asked only once.
 SSH_OPTS=(
@@ -16,6 +17,9 @@ SSH_OPTS=(
   -o UserKnownHostsFile="$ROOT/.known_hosts"
   -o HostKeyAlgorithms=+ssh-rsa
 )
+if [ -f "$RM_KEY" ]; then
+  SSH_OPTS+=(-i "$RM_KEY")
+fi
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 die() { printf '\n\033[31mFehler:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -25,8 +29,10 @@ rm_ssh_tty() { ssh -t "${SSH_OPTS[@]}" "root@$RM_HOST" "$@"; }
 
 connect() {
   say "Verbinde mit dem reMarkable ($RM_HOST) …"
-  echo "Passwort: auf dem reMarkable unter Einstellungen → Hilfe → Über →"
-  echo "Copyrights und Lizenzen (ganz unten, Abschnitt „GPLv3 Compliance“)."
+  if [ ! -f "$RM_KEY" ]; then
+    echo "Passwort: auf dem reMarkable unter Einstellungen → Hilfe → Über →"
+    echo "Copyrights und Lizenzen (ganz unten, Abschnitt „GPLv3 Compliance“)."
+  fi
   if ! rm_ssh true; then
     die "Keine Verbindung. Ist der reMarkable per USB angeschlossen, entsperrt und an?
 Falls eine Warnung zum Host-Schlüssel kam (z. B. nach Zurücksetzen): Datei

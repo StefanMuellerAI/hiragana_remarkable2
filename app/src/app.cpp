@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <random>
 #include <sstream>
 
@@ -848,6 +849,11 @@ App::handleStroke() {
   }
   const auto res = checker_->add(line);
   const std::string n = std::to_string(res.expected + 1);
+  // One line per stroke in the log, to diagnose pen problems remotely.
+  std::fprintf(stderr, "stroke %s #%d -> %s (start %.0f,%.0f end %.0f,%.0f, %zu pts)\n",
+               k.glyph.c_str(), res.expected + 1, kana::describe(res.kind),
+               current_.front().first, current_.front().second, current_.back().first,
+               current_.back().second, current_.size());
 
   switch (res.kind) {
     case kana::StrokeResult::Good:
