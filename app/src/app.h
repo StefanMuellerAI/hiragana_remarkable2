@@ -42,6 +42,8 @@ public:
   void penMove(float x, float y);
   void penUp(float x, float y);
   void touchTap(int x, int y);
+  // Finger moved by (dx, dy) between touch-down and lift-off.
+  void touchSwipe(int dx, int dy);
   void powerButton();
   void tick();
 
@@ -54,8 +56,13 @@ public:
   const gfx::Canvas& canvas() const { return canvas_; }
   std::string screenName() const;
 
+  // For the test harness.
+  const std::string& message() const { return message_; }
+  int sheetCorrect() const;
+  int sheetTop() const { return sheetTop_; }
+
 private:
-  enum class Screen { Home, Practice, Summary, Progress, System };
+  enum class Screen { Home, Practice, Summary, Progress, System, Sheet };
   enum class Mode { Learn, Practice, Test };
 
   struct Button {
@@ -94,6 +101,8 @@ private:
   void drawKanaStrokes(const kana::Kana& k, gfx::Rect box, int upto,
                        int highlight, float width, uint8_t done, uint8_t cur);
   void drawRefStroke(const kana::Line& ref, float width, uint8_t v, bool arrow);
+  void drawRefStrokeIn(const kana::Line& ref, gfx::Rect box, float width, uint8_t v,
+                       bool arrow);
   void drawCheckMark(int cx, int cy, int size, uint8_t v);
   void invalidate(gfx::Rect r, Refresh mode);
 
@@ -106,6 +115,32 @@ private:
   std::string promptLabel(const kana::Kana& k) const;
   std::vector<int> selectedKana() const;
   int dueCount() const;
+
+  // Writing sheet ("Schreibblatt"): one line per kana, the model on the
+  // left and empty cells to write it again and again. Only correctly
+  // written kana stay; nothing is saved when the sheet is left.
+  struct SheetCell {
+    std::vector<std::vector<std::pair<float, float>>> ink; // screen coords
+    std::unique_ptr<kana::Checker> checker;
+    bool done = false;
+  };
+  struct SheetLine {
+    int kana = 0;
+    std::vector<SheetCell> cells; // [0] is the model
+  };
+  void openSheet();
+  void drawSheet();
+  gfx::Rect drawSheetLine(int line);
+  gfx::Rect sheetCellRect(int line, int cell) const;
+  gfx::Rect sheetBand(int line) const;
+  gfx::Rect sheetGrid() const;
+  bool sheetHit(float x, float y, int& line, int& cell) const;
+  bool sheetVisible(int line) const;
+  void sheetPage(int delta);
+  void eraseSheetCell(int line, int cell);
+  void handleSheetStroke();
+  void sheetMessage(const std::string& msg, bool bold);
+  std::string kanaName(const kana::Kana& k) const;
 
   Platform& platform_;
   const gfx::Fonts& fonts_;
@@ -146,6 +181,17 @@ private:
   int64_t lastInputMs_ = 0;
   std::string homeNotice_;
   Mode summaryMode_ = Mode::Learn;
+  std::string message_; // last feedback line
+
+  // Writing sheet
+  std::vector<SheetLine> sheet_;
+  int sheetTop_ = 0;             // first visible line
+  bool sheetPen_ = false;        // a stroke is being written on the sheet
+  int sheetPenLine_ = -1, sheetPenCell_ = -1;
+  int activeLine_ = -1, activeCell_ = -1; // cell with an unfinished kana
+  int sheetHintLine_ = -1, sheetHintStroke_ = -1;
+  bool sheetMessageShown_ = false; // an error message is on screen
+  int sheetPagesSinceFlash_ = 0;
 };
 
 } // namespace app

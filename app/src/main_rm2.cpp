@@ -546,12 +546,15 @@ main() {
                 s.changed = true;
                 s.downX = -1;
               } else if (s.id >= 0) {
-                // Finger lifted: a short, still touch counts as a tap.
+                // Finger lifted: a short, still touch counts as a tap, a
+                // quick move as a swipe (the app decides if it's clear enough).
                 const bool still = std::abs(s.x - s.downX) < 40 && std::abs(s.y - s.downY) < 40;
-                const bool quick = monotonicMs() - s.downMs < 700;
+                const int64_t held = monotonicMs() - s.downMs;
                 const bool penBusy = penNear || monotonicMs() - penLeftMs < 600;
-                if (still && quick && !penBusy && s.downX >= 0) {
+                if (still && held < 700 && !penBusy && s.downX >= 0) {
                   application.touchTap(s.x, s.y);
+                } else if (!still && held < 1200 && !penBusy && s.downX >= 0) {
+                  application.touchSwipe(s.x - s.downX, s.y - s.downY);
                 }
                 s.id = -1;
               }

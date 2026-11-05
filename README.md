@@ -7,6 +7,10 @@ Richtung, Reihenfolge und Form. Bei einem Fehler zeigt sie dir den richtigen Str
 - **Lernen** – Zeichen mit grauer Vorlage nachfahren, mit Strichnummern und Strichfolge-Leiste.
 - **Üben** – aus dem Gedächtnis schreiben (nur die Lautschrift wird angezeigt), mit Korrektur und „Tipp“-Knopf.
 - **Test** – Lernkartei mit 6 Stufen: fällige Zeichen werden wiederholt, Fehler schicken ein Zeichen zurück auf Stufe 1.
+- **Schreibblatt** – wie ein Übungsblatt: pro Zeile ein Zeichen als Vorlage und 6 Kästchen (ca. 2 cm) zum Wiederholen.
+  Jedes Zeichen wird Strich für Strich geprüft; bei falscher Reihenfolge, Richtung oder Form wird es gelöscht
+  und die Vorlage zeigt den richtigen Strich mit Pfeil. Nur richtig geschriebene Zeichen bleiben stehen.
+  Blättern mit den Knöpfen oder per Wischen mit dem Finger. Beim Verlassen wird das Blatt geleert, der Lernstand bleibt unberührt.
 - **Fortschritt** – Übersicht aller 151 Zeichen (Hiragana, Katakana, mit Dakuten, kleine Kana, ー) mit Lernstufe.
 - Einschaltknopf = Ruhezustand, nach 10 Minuten ohne Eingabe schläft das Gerät automatisch.
 
