@@ -60,9 +60,17 @@ public:
   const std::string& message() const { return message_; }
   int sheetCorrect() const;
   int sheetTop() const { return sheetTop_; }
+  int sheetCurrentLine() const; // first line that isn't full yet
+  bool quizKanaShown() const { return quizShowKana_; }
+  int quizCorrectOption() const { return quizCorrect_; }
+  std::vector<std::string> quizOptionLabels() const;
+  std::string quizTargetLabel() const;
+  int quizRight() const { return quizRight_; }
+  int quizWrong() const { return quizWrong_; }
+  bool quizFinished() const { return quizEnd_; }
 
 private:
-  enum class Screen { Home, Practice, Summary, Progress, System, Sheet };
+  enum class Screen { Home, Practice, Summary, Progress, System, Sheet, Quiz };
   enum class Mode { Learn, Practice, Test };
 
   struct Button {
@@ -140,7 +148,20 @@ private:
   void eraseSheetCell(int line, int cell);
   void handleSheetStroke();
   void sheetMessage(const std::string& msg, bool bold);
+  bool sheetLineFull(int line) const;
   std::string kanaName(const kana::Kana& k) const;
+
+  // Matching game ("Zuordnen"): a kana with three readings to choose from,
+  // or a reading with three kana. Every selected kana comes up once per
+  // round; nothing is saved.
+  void startQuiz(std::vector<int> queue);
+  void makeQuizQuestion();
+  void answerQuiz(int option);
+  void nextQuizQuestion();
+  void drawQuiz();
+  void drawQuizEnd();
+  void drawQuizOption(int i, gfx::Rect r);
+  std::string quizLabel(const kana::Kana& k) const;
 
   Platform& platform_;
   const gfx::Fonts& fonts_;
@@ -192,6 +213,20 @@ private:
   int sheetHintLine_ = -1, sheetHintStroke_ = -1;
   bool sheetMessageShown_ = false; // an error message is on screen
   int sheetPagesSinceFlash_ = 0;
+
+  // Matching game
+  std::vector<int> quizQueue_;
+  size_t quizPos_ = 0;
+  bool quizShowKana_ = true;     // true: kana shown, readings to choose
+  std::vector<int> quizOptions_; // kana indices
+  int quizCorrect_ = -1;         // index into quizOptions_
+  int quizChosen_ = -1;          // -1 until answered
+  int quizRight_ = 0, quizWrong_ = 0;
+  std::vector<int> quizMistakes_;
+  bool quizEnd_ = false;
+  int64_t quizAdvanceAt_ = -1;
+  int quizSinceFlash_ = 0;
+  uint32_t quizSeed_ = 1;
 };
 
 } // namespace app

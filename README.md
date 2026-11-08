@@ -10,7 +10,12 @@ Richtung, Reihenfolge und Form. Bei einem Fehler zeigt sie dir den richtigen Str
 - **Schreibblatt** – wie ein Übungsblatt: pro Zeile ein Zeichen als Vorlage und 6 Kästchen (ca. 2 cm) zum Wiederholen.
   Jedes Zeichen wird Strich für Strich geprüft; bei falscher Reihenfolge, Richtung oder Form wird es gelöscht
   und die Vorlage zeigt den richtigen Strich mit Pfeil. Nur richtig geschriebene Zeichen bleiben stehen.
+  Die Zeilen werden der Reihe nach freigeschaltet: Die nächste Zeile nimmt erst Striche an, wenn alle Kästchen
+  der Zeile davor richtig beschrieben sind (gesperrte Zeilen sind ausgegraut).
   Blättern mit den Knöpfen oder per Wischen mit dem Finger. Beim Verlassen wird das Blatt geleert, der Lernstand bleibt unberührt.
+- **Zuordnen** – kleines Spiel: zu einem Zeichen die richtige Lautschrift aus drei wählen, oder zu einer Lautschrift
+  das richtige Zeichen (gemischt). Jedes ausgewählte Zeichen kommt einmal pro Runde dran; Hiragana oder Katakana
+  je nach Schalter auf der Startseite. Am Ende: Ergebnis und „Fehler nochmal“. Wird nicht gespeichert.
 - **Fortschritt** – Übersicht aller 151 Zeichen (Hiragana, Katakana, mit Dakuten, kleine Kana, ー) mit Lernstufe.
 - Einschaltknopf = Ruhezustand, nach 10 Minuten ohne Eingabe schläft das Gerät automatisch.
 

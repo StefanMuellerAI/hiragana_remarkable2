@@ -86,6 +86,8 @@ App::screenName() const {
       return "system";
     case Screen::Sheet:
       return "sheet";
+    case Screen::Quiz:
+      return "quiz";
   }
   return "?";
 }
@@ -157,6 +159,9 @@ App::redraw() {
     case Screen::Sheet:
       drawSheet();
       break;
+    case Screen::Quiz:
+      drawQuiz();
+      break;
   }
 }
 
@@ -203,23 +208,23 @@ App::drawHome() {
     const int w = fonts_.textWidth(FontId::Regular, 26, b);
     canvas_.text(fonts_, FontId::Regular, 26, b, W - 40 - w, 50, gfx::kDark);
   }
-  canvas_.textCentered(fonts_, FontId::Kana, 150, "かな道場", W / 2, 235, gfx::kBlack);
+  canvas_.textCentered(fonts_, FontId::Kana, 150, "かな道場", W / 2, 200, gfx::kBlack);
   canvas_.textCentered(fonts_, FontId::Regular, 32,
                        "Kana-Dojo · Hiragana und Katakana schreiben lernen",
-                       W / 2, 305, gfx::kDark);
+                       W / 2, 262, gfx::kDark);
 
   // Script toggle
-  canvas_.text(fonts_, FontId::Bold, 32, "Schrift", 60, 392, gfx::kBlack);
+  canvas_.text(fonts_, FontId::Bold, 32, "Schrift", 60, 336, gfx::kBlack);
   for (int i = 0; i < 2; i++) {
     const auto s = static_cast<kana::Script>(i);
-    const Rect r = Rect::xywh(60 + i * 654, 412, 630, 150);
+    const Rect r = Rect::xywh(60 + i * 654, 356, 630, 130);
     const bool sel = s == script_;
     canvas_.roundRect(r, 18, sel ? gfx::kBlack : gfx::kWhite, 4, gfx::kBlack);
     const uint8_t fg = sel ? gfx::kWhite : gfx::kBlack;
     canvas_.textCentered(fonts_, FontId::Kana, 64,
-                         i == 0 ? "ひらがな" : "カタカナ", r.cx(), r.y0 + 82, fg);
+                         i == 0 ? "ひらがな" : "カタカナ", r.cx(), r.y0 + 72, fg);
     canvas_.textCentered(fonts_, FontId::Regular, 32, scriptName(s), r.cx(),
-                         r.y0 + 128, fg);
+                         r.y0 + 114, fg);
     buttons_.push_back({ r, [this, s] {
                           script_ = s;
                           progress_.setSetting("script", scriptKey(s));
@@ -230,7 +235,7 @@ App::drawHome() {
   }
 
   // Row (gyō) selection
-  canvas_.text(fonts_, FontId::Bold, 32, "Reihen", 60, 642, gfx::kBlack);
+  canvas_.text(fonts_, FontId::Bold, 32, "Reihen", 60, 556, gfx::kBlack);
   auto setAll = [this](bool on) {
     std::string list;
     for (const auto& g : kana::groups()) {
@@ -246,15 +251,15 @@ App::drawHome() {
     redraw();
     invalidate(canvas_.rect(), Refresh::Ui);
   };
-  drawButton(Rect::xywh(1004, 594, 160, 66), "Alle", false, [setAll] { setAll(true); });
-  drawButton(Rect::xywh(1184, 594, 160, 66), "Keine", false, [setAll] { setAll(false); });
+  drawButton(Rect::xywh(1004, 508, 160, 66), "Alle", false, [setAll] { setAll(true); });
+  drawButton(Rect::xywh(1184, 508, 160, 66), "Keine", false, [setAll] { setAll(false); });
 
   int col = 0, row = 0;
   for (const auto& g : kana::groups()) {
     if (g.script != script_) {
       continue;
     }
-    const Rect r = Rect::xywh(60 + col * 162, 684 + row * 156, 148, 140);
+    const Rect r = Rect::xywh(60 + col * 162, 598 + row * 156, 148, 140);
     const bool sel = groupSelected_[g.index];
     canvas_.roundRect(r, 16, sel ? gfx::kBlack : gfx::kWhite, 3,
                       sel ? gfx::kBlack : gfx::kMid);
@@ -283,7 +288,7 @@ App::drawHome() {
   }
 
   // Modes
-  canvas_.text(fonts_, FontId::Bold, 32, "Üben", 60, 1046, gfx::kBlack);
+  canvas_.text(fonts_, FontId::Bold, 32, "Üben", 60, 950, gfx::kBlack);
   const int n = static_cast<int>(selectedKana().size());
   const int due = dueCount();
   struct ModeInfo {
@@ -302,14 +307,16 @@ App::drawHome() {
       [this] { startMode(Mode::Test); } },
     { "Schreibblatt", "Zeile für Zeile schreiben – Fehler werden gelöscht",
       std::to_string(n) + " Zeilen", [this] { openSheet(); } },
+    { "Zuordnen", "Spiel: Zeichen und Lautschrift richtig zuordnen",
+      std::to_string(n) + " Fragen", [this] { startQuiz(selectedKana()); } },
   };
-  for (int i = 0; i < 4; i++) {
-    const Rect r = Rect::xywh(60, 1066 + i * 150, 1284, 138);
+  for (int i = 0; i < 5; i++) {
+    const Rect r = Rect::xywh(60, 970 + i * 140, 1284, 128);
     canvas_.roundRect(r, 18, gfx::kWhite, 4, gfx::kBlack);
-    canvas_.text(fonts_, FontId::Bold, 52, modes[i].title, r.x0 + 40, r.y0 + 66, gfx::kBlack);
-    canvas_.text(fonts_, FontId::Regular, 32, modes[i].desc, r.x0 + 40, r.y0 + 114, gfx::kDark);
+    canvas_.text(fonts_, FontId::Bold, 52, modes[i].title, r.x0 + 40, r.y0 + 60, gfx::kBlack);
+    canvas_.text(fonts_, FontId::Regular, 32, modes[i].desc, r.x0 + 40, r.y0 + 106, gfx::kDark);
     const int w = fonts_.textWidth(FontId::Bold, 40, modes[i].right);
-    canvas_.text(fonts_, FontId::Bold, 40, modes[i].right, r.x1 - 50 - w, r.y0 + 86,
+    canvas_.text(fonts_, FontId::Bold, 40, modes[i].right, r.x1 - 50 - w, r.y0 + 80,
                  gfx::kBlack);
     buttons_.push_back({ r, modes[i].action });
   }
@@ -657,7 +664,7 @@ App::drawSystem() {
   });
 
   const char* info[] = {
-    "Kana-Dojo 1.1 – Schreibtrainer für Hiragana und Katakana",
+    "Kana-Dojo 1.2 – Schreibtrainer für Hiragana und Katakana",
     "Strichdaten: KanjiVG (Ulrich Apel, CC BY-SA 3.0)",
     "Schriften: Klee One, Noto Sans (SIL Open Font License)",
     "Display-Treiber: rm2fb / rM2-stuff von timower (GPL-3.0)",
@@ -946,6 +953,25 @@ App::sheetCorrect() const {
   return n;
 }
 
+bool
+App::sheetLineFull(int line) const {
+  const auto& cells = sheet_[line].cells;
+  return std::all_of(cells.begin() + 1, cells.end(),
+                     [](const SheetCell& c) { return c.done; });
+}
+
+// Lines are written in order: only the first line that isn't full takes
+// strokes, the ones below it unlock one by one.
+int
+App::sheetCurrentLine() const {
+  for (int i = 0; i < static_cast<int>(sheet_.size()); i++) {
+    if (!sheetLineFull(i)) {
+      return i;
+    }
+  }
+  return static_cast<int>(sheet_.size());
+}
+
 void
 App::openSheet() {
   sheet_.clear();
@@ -1022,6 +1048,8 @@ App::drawSheetLine(int line) {
   const auto& L = sheet_[line];
   const auto& k = kana::all()[L.kana];
   const int strokes = static_cast<int>(k.strokes.size());
+  const int current = sheetCurrentLine();
+  const bool locked = line > current; // greyed out until the lines above are full
 
   // The model, written once at the start of the line. After a mistake it
   // shows the stroke that was due, with its direction.
@@ -1030,25 +1058,31 @@ App::drawSheetLine(int line) {
   if (k.romaji != "-") {
     const std::string label =
       kana::groups()[k.group].name == "klein" ? "klein " + k.romaji : k.romaji;
-    canvas_.text(fonts_, FontId::Regular, 26, label, model.x0 + 10, model.y0 + 30, gfx::kDark);
+    canvas_.text(fonts_, FontId::Regular, 26, label, model.x0 + 10, model.y0 + 30,
+                 locked ? gfx::kMid : gfx::kDark);
   }
   if (line == sheetHintLine_ && sheetHintStroke_ >= 0 && sheetHintStroke_ < strokes) {
     drawKanaStrokes(k, model, strokes, -1, 7.f, gfx::kLight, gfx::kLight);
     drawRefStrokeIn(k.strokes[sheetHintStroke_].points, model, 8.f, gfx::kBlack, true);
   } else {
-    drawKanaStrokes(k, model, strokes, -1, 8.f, gfx::kBlack, gfx::kBlack);
+    const uint8_t v = locked ? gfx::kMid : gfx::kBlack;
+    drawKanaStrokes(k, model, strokes, -1, 8.f, v, v);
   }
 
-  // Empty cells with a light centre cross, like a practice sheet.
+  // Empty cells with a light centre cross, like a practice sheet. The line
+  // being written gets a bold frame, locked lines a faint one.
   for (int c = 1; c <= kSheetCols; c++) {
     const Rect r = sheetCellRect(line, c);
-    canvas_.dashedLine(r.cx(), r.y0 + 6, r.cx(), r.y1 - 6, 10, 2, gfx::kLight);
-    canvas_.dashedLine(r.x0 + 6, r.cy(), r.x1 - 6, r.cy(), 10, 2, gfx::kLight);
-    canvas_.frame(r, 1, gfx::kMid);
+    if (!locked) {
+      canvas_.dashedLine(r.cx(), r.y0 + 6, r.cx(), r.y1 - 6, 10, 2, gfx::kLight);
+      canvas_.dashedLine(r.x0 + 6, r.cy(), r.x1 - 6, r.cy(), 10, 2, gfx::kLight);
+    }
+    canvas_.frame(r, 1, locked ? gfx::kLight : gfx::kMid);
   }
-  canvas_.frame({ model.x0, model.y0, model.x0 + (kSheetCols + 1) * kSheetCell, model.y1 }, 3,
-                gfx::kDark);
-  canvas_.fill({ model.x1 - 1, model.y0, model.x1 + 2, model.y1 }, gfx::kDark);
+  const uint8_t frameV = locked ? gfx::kLight : line == current ? gfx::kBlack : gfx::kDark;
+  canvas_.frame({ model.x0, model.y0, model.x0 + (kSheetCols + 1) * kSheetCell, model.y1 },
+                line == current ? 5 : 3, frameV);
+  canvas_.fill({ model.x1 - 1, model.y0, model.x1 + 2, model.y1 }, frameV);
 
   for (int c = 1; c <= kSheetCols; c++) {
     const auto& cell = L.cells[c];
@@ -1191,6 +1225,21 @@ App::handleSheetStroke() {
         sheetHintLine_ = sheetHintStroke_ = -1;
       }
       invalidate(drawSheetLine(line), Refresh::Ui);
+      if (sheetLineFull(line)) {
+        // Line done: the next one unlocks.
+        const int next = line + 1;
+        std::string msg = "Zeile " + kanaName(k) + " geschafft";
+        if (next >= static_cast<int>(sheet_.size())) {
+          msg = "Alle Zeilen geschafft – super!";
+        } else if (sheetVisible(next)) {
+          msg += " – weiter mit " + kanaName(kana::all()[sheet_[next].kana]) + ".";
+          invalidate(drawSheetLine(next), Refresh::Ui);
+        } else {
+          msg += " – weiter auf der nächsten Seite.";
+        }
+        sheetMessage(msg, true);
+        return;
+      }
     } else {
       activeLine_ = line;
       activeCell_ = c;
@@ -1230,6 +1279,268 @@ App::handleSheetStroke() {
   sheetMessage(msg, true);
 }
 
+// ------------------------------------------------------------------- quiz --
+
+namespace {
+
+const Rect kQuizBig = Rect::xywh((W - 600) / 2, 220, 600, 600);
+constexpr int kQuizOptY = 930, kQuizOptW = 408, kQuizOptH = 430, kQuizOptGap = 30;
+constexpr int64_t kQuizAdvanceMs = 900;
+constexpr int kQuizFlashEvery = 8;
+
+Rect
+quizOptionRect(int i) {
+  return Rect::xywh(60 + i * (kQuizOptW + kQuizOptGap), kQuizOptY, kQuizOptW, kQuizOptH);
+}
+
+} // namespace
+
+std::string
+App::quizLabel(const kana::Kana& k) const {
+  if (k.romaji == "-") {
+    return "Langvokal";
+  }
+  if (kana::groups()[k.group].name == "klein") {
+    return "klein " + k.romaji;
+  }
+  return k.romaji;
+}
+
+std::vector<std::string>
+App::quizOptionLabels() const {
+  std::vector<std::string> out;
+  for (int i : quizOptions_) {
+    const auto& k = kana::all()[i];
+    out.push_back(quizShowKana_ ? quizLabel(k) : k.glyph);
+  }
+  return out;
+}
+
+std::string
+App::quizTargetLabel() const {
+  if (quizEnd_ || quizPos_ >= quizQueue_.size()) {
+    return "";
+  }
+  const auto& k = kana::all()[quizQueue_[quizPos_]];
+  return quizShowKana_ ? k.glyph : quizLabel(k);
+}
+
+void
+App::startQuiz(std::vector<int> queue) {
+  if (queue.empty()) {
+    return;
+  }
+  quizSeed_ = quizSeed_ * 2654435761u + static_cast<uint32_t>(platform_.nowMs());
+  std::mt19937 rng(quizSeed_);
+  std::shuffle(queue.begin(), queue.end(), rng);
+  quizQueue_ = std::move(queue);
+  quizPos_ = 0;
+  quizRight_ = quizWrong_ = 0;
+  quizMistakes_.clear();
+  quizEnd_ = false;
+  quizAdvanceAt_ = -1;
+  quizSinceFlash_ = 0;
+  message_.clear();
+  makeQuizQuestion();
+  show(Screen::Quiz);
+}
+
+void
+App::makeQuizQuestion() {
+  std::mt19937 rng(quizSeed_ + static_cast<uint32_t>(quizPos_) * 7919u);
+  const int target = quizQueue_[quizPos_];
+  const auto& tk = kana::all()[target];
+  const std::string label = quizLabel(tk);
+  quizShowKana_ = (rng() & 1u) != 0;
+
+  // Wrong answers: other kana with a different reading, from the selection
+  // on the home screen, or from the whole script if that's too small.
+  auto collect = [&](const std::vector<int>& pool) {
+    std::vector<int> out;
+    std::vector<std::string> seen{ label };
+    for (int i : pool) {
+      const std::string l = quizLabel(kana::all()[i]);
+      if (std::find(seen.begin(), seen.end(), l) == seen.end()) {
+        seen.push_back(l);
+        out.push_back(i);
+      }
+    }
+    return out;
+  };
+  std::vector<int> wrong = collect(selectedKana());
+  if (wrong.size() < 2) {
+    std::vector<int> all;
+    for (const auto& k : kana::all()) {
+      if (k.script == tk.script) {
+        all.push_back(k.index);
+      }
+    }
+    wrong = collect(all);
+  }
+  std::shuffle(wrong.begin(), wrong.end(), rng);
+  quizOptions_ = { target, wrong[0], wrong[1] };
+  std::shuffle(quizOptions_.begin(), quizOptions_.end(), rng);
+  quizCorrect_ = static_cast<int>(
+    std::find(quizOptions_.begin(), quizOptions_.end(), target) - quizOptions_.begin());
+  quizChosen_ = -1;
+}
+
+void
+App::answerQuiz(int option) {
+  if (quizEnd_) {
+    return;
+  }
+  if (quizChosen_ >= 0) {
+    nextQuizQuestion(); // tapping again after the answer moves on
+    return;
+  }
+  quizChosen_ = option;
+  const auto& k = kana::all()[quizQueue_[quizPos_]];
+  const bool ok = option == quizCorrect_;
+  if (ok) {
+    quizRight_++;
+    message_ = "Richtig!";
+    quizAdvanceAt_ = platform_.nowMs() + kQuizAdvanceMs;
+  } else {
+    quizWrong_++;
+    if (std::find(quizMistakes_.begin(), quizMistakes_.end(), k.index) == quizMistakes_.end()) {
+      quizMistakes_.push_back(k.index);
+    }
+    message_ = quizShowKana_ ? "Falsch – richtig ist „" + quizLabel(k) + "“."
+                             : "Falsch – richtig ist das schwarze Feld.";
+  }
+  std::fprintf(stderr, "quiz %s (%s) -> %s\n", k.glyph.c_str(),
+               quizShowKana_ ? "Zeichen gezeigt" : "Lautschrift gezeigt", ok ? "richtig" : "falsch");
+  redraw();
+  invalidate({ 0, kQuizOptY - 10, W, H }, Refresh::Ui);
+}
+
+void
+App::nextQuizQuestion() {
+  quizAdvanceAt_ = -1;
+  if (quizEnd_) {
+    return;
+  }
+  quizPos_++;
+  message_.clear();
+  if (quizPos_ >= quizQueue_.size()) {
+    quizEnd_ = true;
+    redraw();
+    invalidate(canvas_.rect(), Refresh::Full);
+    return;
+  }
+  makeQuizQuestion();
+  redraw();
+  const bool flash = ++quizSinceFlash_ >= kQuizFlashEvery;
+  if (flash) {
+    quizSinceFlash_ = 0;
+  }
+  invalidate(canvas_.rect(), flash ? Refresh::Full : Refresh::Ui);
+}
+
+void
+App::drawQuizOption(int i, Rect r) {
+  const auto& k = kana::all()[quizOptions_[i]];
+  const bool answered = quizChosen_ >= 0;
+  const bool right = answered && i == quizCorrect_;
+  const bool chosenWrong = answered && i == quizChosen_ && !right;
+  const uint8_t bg = right ? gfx::kBlack : chosenWrong ? gfx::kFaint : gfx::kWhite;
+  const uint8_t fg = right ? gfx::kWhite : answered ? gfx::kMid : gfx::kBlack;
+  canvas_.roundRect(r, 24, bg, 4, answered && !right ? gfx::kMid : gfx::kBlack);
+  if (quizShowKana_) {
+    const std::string label = quizLabel(k);
+    int size = 40;
+    for (int s : { 72, 52 }) {
+      if (fonts_.textWidth(FontId::Bold, s, label) <= r.w() - 40) {
+        size = s;
+        break;
+      }
+    }
+    canvas_.textCentered(fonts_, FontId::Bold, size, label, r.cx(), r.cy() + size * 35 / 100,
+                         fg);
+  } else {
+    const int box = 300;
+    const Rect b = Rect::xywh(r.cx() - box / 2, r.cy() - box / 2 - 10, box, box);
+    drawKanaStrokes(k, b, static_cast<int>(k.strokes.size()), -1, 13.f, fg, fg);
+  }
+  if (right) {
+    drawCheckMark(r.x1 - 52, r.y0 + 48, 44, gfx::kWhite);
+  }
+  if (chosenWrong) {
+    canvas_.textCentered(fonts_, FontId::Regular, 26, "deine Wahl", r.cx(), r.y1 - 24,
+                         gfx::kDark);
+  }
+  buttons_.push_back({ r, [this, i] { answerQuiz(i); } });
+}
+
+void
+App::drawQuiz() {
+  if (quizEnd_) {
+    drawQuizEnd();
+    return;
+  }
+  drawHeader("Zuordnen · " + scriptName(script_),
+             std::to_string(quizPos_ + 1) + " / " + std::to_string(quizQueue_.size()));
+  const auto& k = kana::all()[quizQueue_[quizPos_]];
+  canvas_.roundRect(kQuizBig, 24, gfx::kFaint, 2, gfx::kLight);
+  if (quizShowKana_) {
+    canvas_.textCentered(fonts_, FontId::Regular, 40, "Wie liest man dieses Zeichen?", W / 2,
+                         186, gfx::kDark);
+    drawKanaStrokes(k, kQuizBig.inset(30), static_cast<int>(k.strokes.size()), -1, 22.f,
+                    gfx::kBlack, gfx::kBlack);
+  } else {
+    canvas_.textCentered(fonts_, FontId::Regular, 40, "Welches Zeichen ist das?", W / 2, 186,
+                         gfx::kDark);
+    canvas_.textCentered(fonts_, FontId::Bold, 110, quizLabel(k), W / 2, kQuizBig.cy() + 38,
+                         gfx::kBlack);
+  }
+  for (int i = 0; i < 3; i++) {
+    drawQuizOption(i, quizOptionRect(i));
+  }
+  drawFeedback(message_.empty() ? "Tippe auf die richtige Antwort." : message_,
+               !message_.empty());
+  canvas_.text(fonts_, FontId::Regular, 40,
+               std::to_string(quizRight_) + " richtig · " + std::to_string(quizWrong_) + " falsch",
+               60, 1796, gfx::kBlack);
+  if (quizChosen_ >= 0) {
+    drawButton(Rect::xywh(952, 1722, 400, 120), "Weiter ›", true,
+               [this] { nextQuizQuestion(); });
+  }
+}
+
+void
+App::drawQuizEnd() {
+  drawHeader("Zuordnen · " + scriptName(script_), "");
+  const int n = quizRight_ + quizWrong_;
+  drawCheckMark(W / 2, 270, 150, gfx::kBlack);
+  canvas_.textCentered(fonts_, FontId::Bold, 72, "Runde beendet", W / 2, 470, gfx::kBlack);
+  canvas_.textCentered(fonts_, FontId::Regular, 40,
+                       std::to_string(quizRight_) + " von " + std::to_string(n) + " richtig",
+                       W / 2, 570, gfx::kBlack);
+  if (!quizMistakes_.empty()) {
+    canvas_.textCentered(fonts_, FontId::Bold, 40, "Diese Zeichen noch einmal üben:", W / 2,
+                         700, gfx::kBlack);
+    const int per = 8, cell = 140;
+    const int count = std::min<int>(static_cast<int>(quizMistakes_.size()), 40);
+    for (int i = 0; i < count; i++) {
+      const int rowN = std::min(per, count - (i / per) * per);
+      const int x0 = W / 2 - rowN * cell / 2;
+      canvas_.textCentered(fonts_, FontId::Kana, 96, kana::all()[quizMistakes_[i]].glyph,
+                           x0 + (i % per) * cell + cell / 2, 840 + (i / per) * 140,
+                           gfx::kBlack);
+    }
+    const std::vector<int> wrong = quizMistakes_;
+    drawButton(Rect::xywh(60, 1540, 1284, 130), "Fehler nochmal", true,
+               [this, wrong] { startQuiz(wrong); });
+  } else {
+    canvas_.textCentered(fonts_, FontId::Bold, 52, "Alles richtig – sehr gut!", W / 2, 720,
+                         gfx::kBlack);
+  }
+  drawButton(Rect::xywh(60, 1700, 630, 130), "Neue Runde", quizMistakes_.empty(),
+             [this] { startQuiz(selectedKana()); });
+  drawButton(Rect::xywh(714, 1700, 630, 130), "Menü", false, [this] { show(Screen::Home); });
+}
+
 // ------------------------------------------------------------------ input --
 
 void
@@ -1240,6 +1551,13 @@ App::penDown(float x, float y) {
     pressedButton_ = -1;
     if (cell < 1 || sheet_[line].cells[cell].done) {
       return; // the model and finished kana can't be written over
+    }
+    const int current = sheetCurrentLine();
+    if (line > current) {
+      sheetMessage("Erst Zeile " + kanaName(kana::all()[sheet_[current].kana]) +
+                     " komplett richtig schreiben.",
+                   true);
+      return;
     }
     if (sheetMessageShown_) {
       sheetMessage(kSheetHelp, false);
@@ -1387,8 +1705,20 @@ App::sleep() {
 void
 App::tick() {
   const int64_t now = platform_.nowMs();
+  // Timers only act on the screen that set them (the menu may have been
+  // opened in the meantime).
   if (autoAdvanceAt_ >= 0 && now >= autoAdvanceAt_) {
-    nextKana();
+    if (screen_ == Screen::Practice) {
+      nextKana();
+    } else {
+      autoAdvanceAt_ = -1;
+    }
+  }
+  if (quizAdvanceAt_ >= 0 && now >= quizAdvanceAt_) {
+    quizAdvanceAt_ = -1;
+    if (screen_ == Screen::Quiz) {
+      nextQuizQuestion();
+    }
   }
   if (now - lastInputMs_ >= kSleepAfterMs) {
     sleep();
@@ -1401,6 +1731,9 @@ App::msUntilTimer() const {
   int64_t next = lastInputMs_ + kSleepAfterMs - now;
   if (autoAdvanceAt_ >= 0) {
     next = std::min(next, autoAdvanceAt_ - now);
+  }
+  if (quizAdvanceAt_ >= 0) {
+    next = std::min(next, quizAdvanceAt_ - now);
   }
   return std::max<int64_t>(0, next);
 }
