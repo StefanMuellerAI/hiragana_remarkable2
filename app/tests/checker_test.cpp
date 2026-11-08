@@ -179,6 +179,42 @@ main() {
            0.75);
   }
 
+  // 3b) A dakuten / handakuten (the last strokes of the ga…pa rows) written
+  // before the kana itself is a stroke-order mistake, not a stray touch.
+  {
+    int tested = 0, called = 0;
+    for (int trial = 0; trial < 20; trial++) {
+      for (const auto& k : kanaList) {
+        const std::string& g = groups()[k.group].name;
+        if (g != "ga" && g != "za" && g != "da" && g != "ba" && g != "pa") {
+          continue;
+        }
+        Hand h = randomHand(1.f);
+        Checker c(k);
+        auto r = c.add(write(k.strokes.back().points, h, 1.f));
+        tested++;
+        called += r.kind == StrokeResult::OtherStroke;
+      }
+    }
+    expect(tested > 0 && double(called) / tested >= 0.95,
+           "dakuten written first is a mistake",
+           double(called) / tested,
+           0.95);
+  }
+
+  // 3c) Tiny touches stay harmless.
+  {
+    int tested = 0, noise = 0;
+    for (const auto& k : kanaList) {
+      Checker c(k);
+      const Pt p = k.strokes.front().points.front();
+      auto r = c.add(Line{ p, p + Pt{ 0.8f, 0.6f } });
+      tested++;
+      noise += r.kind == StrokeResult::Noise && c.mistakes() == 0;
+    }
+    expect(double(noise) / tested >= 1.0, "a tiny touch is ignored", double(noise) / tested, 1.0);
+  }
+
   // 4) Confusable pairs: writing one when the other is asked must fail.
   {
     const std::pair<const char*, const char*> pairs[] = {

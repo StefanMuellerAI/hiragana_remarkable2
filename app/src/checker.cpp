@@ -150,6 +150,22 @@ Checker::add(const Line& stroke) {
 
   const float refLen = refLength_[res.expected];
   if (stroke.size() < 2 || length(stroke) < std::max(2.f, 0.15f * refLen)) {
+    // Too short for the stroke that's due. It may still be a small later
+    // stroke written too early, like a dakuten dot; only then is it a
+    // mistake rather than an accidental touch.
+    const float len = stroke.size() < 2 ? 0.f : length(stroke);
+    for (int j = res.expected + 1; j < static_cast<int>(ref_.size()); j++) {
+      if (len < std::max(2.f, 0.15f * refLength_[j])) {
+        continue;
+      }
+      const Match mj = match(j, stroke);
+      if (mj.fits() || mj.fitsReversed()) {
+        mistakes_++;
+        res.kind = StrokeResult::OtherStroke;
+        res.matched = j;
+        return res;
+      }
+    }
     res.kind = StrokeResult::Noise;
     return res;
   }

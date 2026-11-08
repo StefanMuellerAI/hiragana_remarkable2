@@ -86,6 +86,14 @@ check(bool ok, const char* what) {
   failures += !ok;
 }
 
+// Home screen tap targets (layout mirrors drawHome).
+constexpr int kTapCardX = 700;
+constexpr int kTapLearnY = 1030, kTapPracticeY = 1170, kTapTestY = 1310, kTapSheetY = 1450,
+              kTapQuizY = 1590;
+constexpr int kTapScriptY = 420, kTapHiraganaX = 375, kTapKatakanaX = 1029;
+constexpr int kTapAllX = 1084, kTapAllY = 541;
+constexpr int kTapGroupY = 598 + 70; // first row of the gyō buttons
+
 // ----- writing sheet helpers (layout mirrors app.cpp) -----
 
 gfx::Rect
@@ -149,8 +157,7 @@ checkFits(const App& a, const char* what) {
 
 void
 sheetTests(App& a) {
-  // Home -> Schreibblatt (fourth card).
-  tap(a, 700, 1585);
+  tap(a, kTapCardX, kTapSheetY);
   check(a.screenName() == "sheet", "Schreibblatt opens the sheet");
   save(a, "sheet-start");
 
@@ -168,22 +175,43 @@ sheetTests(App& a) {
   save(a, "sheet-wrong-order");
 
   // Backwards stroke.
-  writeStrokeIn(a, I, 0, cellRect(a, 1, 1), true);
+  writeStrokeIn(a, A, 0, cellRect(a, 0, 2), true);
   check(contains(a.message(), "falsche Richtung"), "reversed stroke is erased and named");
   checkFits(a, "direction message");
 
-  // Half-written あ, then a good stroke of い elsewhere: あ is dropped.
-  writeStrokeIn(a, A, 0, cellRect(a, 0, 3));
+  // The next line stays locked until this one is full.
   writeStrokeIn(a, I, 0, cellRect(a, 1, 1));
+  check(a.sheetCorrect() == 1 && a.sheetCurrentLine() == 0 &&
+          contains(a.message(), "komplett richtig"),
+        "next line is locked");
+  checkFits(a, "locked message");
+  save(a, "sheet-locked");
+
+  // Half-written あ, then a new one next to it: the first is dropped.
+  writeStrokeIn(a, A, 0, cellRect(a, 0, 3));
+  writeStrokeIn(a, A, 0, cellRect(a, 0, 4));
   check(contains(a.message(), "nicht fertig"), "unfinished kana is erased when moving on");
   checkFits(a, "unfinished message");
-  writeStrokeIn(a, I, 1, cellRect(a, 1, 1));
-  check(a.sheetCorrect() == 2, "い completed after the abandoned あ");
+  writeStrokeIn(a, A, 1, cellRect(a, 0, 4));
+  writeStrokeIn(a, A, 2, cellRect(a, 0, 4));
+  check(a.sheetCorrect() == 2, "あ completed after the abandoned one");
 
   // Finished cells and the model can't be written over.
   writeStrokeIn(a, A, 0, cellRect(a, 0, 1));
   writeStrokeIn(a, A, 0, cellRect(a, 0, 0));
   check(a.sheetCorrect() == 2, "finished cell and model ignore the pen");
+
+  // Filling the line unlocks the next one.
+  for (int c : { 2, 3, 5 }) {
+    writeKanaIn(a, A, cellRect(a, 0, c));
+  }
+  check(a.sheetCorrect() == 5 && a.sheetCurrentLine() == 0, "line with a free cell stays current");
+  writeKanaIn(a, A, cellRect(a, 0, 6));
+  check(a.sheetCorrect() == 6 && a.sheetCurrentLine() == 1 && contains(a.message(), "geschafft"),
+        "full line unlocks the next one");
+  checkFits(a, "line done message");
+  writeKanaIn(a, I, cellRect(a, 1, 1));
+  check(a.sheetCorrect() == 7, "the unlocked line takes strokes");
 
   // A palm tap on the grid does nothing.
   tap(a, 700, 600);
@@ -199,7 +227,7 @@ sheetTests(App& a) {
   check(a.sheetTop() == 7, "sideways swipe is ignored");
   a.touchSwipe(0, 400);
   a.flush();
-  check(a.sheetTop() == 0 && a.sheetCorrect() == 2, "swipe down goes back, writing kept");
+  check(a.sheetTop() == 0 && a.sheetCorrect() == 7, "swipe down goes back, writing kept");
   tap(a, 1152, 1782);
   check(a.sheetTop() == 7, "Weiter › pages down");
   tap(a, 252, 1782);
@@ -208,17 +236,19 @@ sheetTests(App& a) {
   // Leaving clears the sheet.
   tap(a, 120, 56);
   check(a.screenName() == "home", "Menü leaves the sheet");
-  tap(a, 700, 1585);
-  check(a.screenName() == "sheet" && a.sheetCorrect() == 0, "sheet is blank again");
+  tap(a, kTapCardX, kTapSheetY);
+  check(a.screenName() == "sheet" && a.sheetCorrect() == 0 && a.sheetCurrentLine() == 0,
+        "sheet is blank again");
   tap(a, 120, 56);
 }
 
-// Writes every kana of one script into the sheet, once correctly (with
-// size/position variation) and once with the first two strokes swapped.
+// Writes every kana of one script into the sheet: first stroke 2 on its own
+// (wrong order, must be erased), then all six cells correctly with size and
+// position variation, line by line.
 void
 sheetAllKana(App& a, kana::Script script, const std::string& name) {
-  tap(a, 1084, 627); // "Alle"
-  tap(a, 700, 1585);
+  tap(a, kTapAllX, kTapAllY);
+  tap(a, kTapCardX, kTapSheetY);
   check(a.screenName() == "sheet", "sheet opens with all rows");
   std::vector<int> order; // same order as the app: groups are contiguous
   for (const auto& k : kana::all()) {
@@ -228,7 +258,7 @@ sheetAllKana(App& a, kana::Script script, const std::string& name) {
   }
   std::mt19937 vr(11);
   std::uniform_real_distribution<float> sc(0.85f, 1.1f), sh(-10.f, 10.f);
-  int accepted = 0, multi = 0, rejected = 0;
+  int firstTry = 0, cells = 0, linesDone = 0, multi = 0, rejected = 0;
   std::string missed, slipped;
   const int lines = static_cast<int>(order.size());
   for (int line = 0; line < lines; line++) {
@@ -237,40 +267,170 @@ sheetAllKana(App& a, kana::Script script, const std::string& name) {
       a.flush();
     }
     const auto& k = kana::all()[order[line]];
-    const int before = a.sheetCorrect();
-    writeKanaIn(a, k, cellRect(a, line, 1), sc(vr), sh(vr), sh(vr));
-    if (a.sheetCorrect() == before + 1) {
-      accepted++;
-    } else {
-      missed += k.glyph + " ";
-    }
+    std::vector<int> cellOrder = { 1, 2, 3, 4, 5, 6 };
     if (k.strokes.size() >= 2) {
       multi++;
-      const int b2 = a.sheetCorrect();
-      writeStrokeIn(a, k, 1, cellRect(a, line, 2));
-      writeStrokeIn(a, k, 0, cellRect(a, line, 2));
-      for (size_t s = 2; s < k.strokes.size(); s++) {
-        writeStrokeIn(a, k, int(s), cellRect(a, line, 2));
-      }
-      if (a.sheetCorrect() == b2) {
+      writeStrokeIn(a, k, 1, cellRect(a, line, 1));
+      if (contains(a.message(), "elöscht")) { // "gelöscht" or "Gelöscht"
         rejected++;
       } else {
+        // Taken as stroke 1: the half kana in cell 1 is dropped as soon as
+        // cell 2 gets a stroke, so write cell 1 last.
         slipped += k.glyph + " ";
+        cellOrder = { 2, 3, 4, 5, 6, 1 };
       }
     }
+    for (int c : cellOrder) {
+      cells++;
+      for (int attempt = 0; attempt < 3; attempt++) {
+        const int before = a.sheetCorrect();
+        writeKanaIn(a, k, cellRect(a, line, c), sc(vr), sh(vr), sh(vr));
+        if (a.sheetCorrect() == before + 1) {
+          firstTry += attempt == 0;
+          break;
+        }
+        if (attempt == 0) {
+          missed += k.glyph + " ";
+        }
+      }
+    }
+    linesDone += a.sheetCurrentLine() > line;
   }
-  std::printf("     %s: %d/%d correct kana kept, %d/%d wrong-order kana erased\n",
-              name.c_str(), accepted, lines, rejected, multi);
+  std::printf("     %s: %d/%d kana kept on the first try, %d/%d lines completed, "
+              "%d/%d wrong-order starts erased\n",
+              name.c_str(), firstTry, cells, linesDone, lines, rejected, multi);
   if (!missed.empty()) {
-    std::printf("     not kept: %s\n", missed.c_str());
+    std::printf("     needed a second try: %s\n", missed.c_str());
   }
   if (!slipped.empty()) {
     std::printf("     wrong order not caught: %s\n", slipped.c_str());
   }
-  check(lines > 40 && accepted * 100 >= lines * 97, "≥97 % of correct kana kept in small cells");
-  check(multi > 0 && rejected * 100 >= multi * 90, "≥90 % of wrong-order kana erased");
+  check(firstTry * 100 >= cells * 97, "≥97 % of correct kana kept in small cells");
+  check(linesDone == lines, "every line unlocks the next one");
+  check(multi > 0 && rejected * 100 >= multi * 90, "≥90 % of wrong-order starts erased");
   save(a, "sheet-all-" + name);
   tap(a, 120, 56);
+}
+
+// ----- matching game -----
+
+void
+tapOption(App& a, int i) {
+  tap(a, 60 + i * 438 + 204, 930 + 215);
+}
+
+std::string
+readingOf(const kana::Kana& k) {
+  if (k.romaji == "-") {
+    return "Langvokal";
+  }
+  return kana::groups()[k.group].name == "klein" ? "klein " + k.romaji : k.romaji;
+}
+
+// Three different options with three different readings, the target among
+// them exactly once.
+bool
+optionsSound(const App& a) {
+  const auto labels = a.quizOptionLabels();
+  if (labels.size() != 3 || a.quizCorrectOption() < 0 || a.quizCorrectOption() > 2) {
+    return false;
+  }
+  std::vector<std::string> readings;
+  for (const auto& l : labels) {
+    const kana::Kana* k = a.quizKanaShown() ? nullptr : kana::find(l);
+    readings.push_back(k ? readingOf(*k) : l);
+  }
+  const std::string target = a.quizTargetLabel();
+  const kana::Kana* tk = a.quizKanaShown() ? kana::find(target) : nullptr;
+  const std::string want = tk ? readingOf(*tk) : target;
+  int hits = 0;
+  for (const auto& r : readings) {
+    hits += r == want;
+  }
+  return readings[0] != readings[1] && readings[0] != readings[2] &&
+         readings[1] != readings[2] && hits == 1 && readings[a.quizCorrectOption()] == want;
+}
+
+void
+quizTests(App& a, FakePlatform& pf) {
+  tap(a, kTapCardX, kTapQuizY);
+  check(a.screenName() == "quiz" && !a.quizFinished(), "Zuordnen opens the game");
+  save(a, "quiz-start");
+  bool sound = true, sawKana = false, sawReading = false, wrongWaited = false;
+  int asked = 0;
+  while (!a.quizFinished() && asked < 100) {
+    sound = sound && optionsSound(a);
+    (a.quizKanaShown() ? sawKana : sawReading) = true;
+    const int correct = a.quizCorrectOption();
+    if (asked == 1) {
+      tapOption(a, (correct + 1) % 3);
+      check(contains(a.message(), "Falsch"), "a wrong answer is called out");
+      checkFits(a, "wrong answer message");
+      save(a, "quiz-wrong");
+      pf.now += 3000;
+      a.tick();
+      a.flush();
+      wrongWaited = a.quizWrong() == 1 && contains(a.message(), "Falsch");
+      tap(a, 1152, 1782); // Weiter ›
+    } else {
+      tapOption(a, correct);
+      if (asked == 0) {
+        check(a.message() == "Richtig!" && a.quizRight() == 1, "a right answer counts");
+        save(a, "quiz-right");
+      }
+      pf.now += 1000;
+      a.tick();
+      a.flush();
+    }
+    asked++;
+    if (asked == 3) {
+      save(a, "quiz-question");
+    }
+  }
+  check(sound, "three different options, exactly one right");
+  check(sawKana && sawReading, "both directions are asked");
+  check(wrongWaited, "after a wrong answer it waits for Weiter");
+  check(a.quizFinished() && a.quizRight() == asked - 1 && a.quizWrong() == 1,
+        "round ends with the score");
+  save(a, "quiz-end");
+
+  tap(a, 700, 1605); // Fehler nochmal
+  check(a.screenName() == "quiz" && !a.quizFinished(), "Fehler nochmal starts a round");
+  tapOption(a, a.quizCorrectOption());
+  pf.now += 1000;
+  a.tick();
+  a.flush();
+  check(a.quizFinished() && a.quizRight() == 1 && a.quizWrong() == 0,
+        "that round asks only the missed kana");
+
+  // Leaving while the next question is pending doesn't move anything.
+  tap(a, 375, 1765); // Neue Runde
+  tapOption(a, a.quizCorrectOption());
+  tap(a, 120, 56);
+  pf.now += 1000;
+  a.tick();
+  a.flush();
+  check(a.screenName() == "home", "menu during the auto-advance stays on the menu");
+}
+
+// Answers a whole round over the current selection and checks every question.
+void
+quizRound(App& a, FakePlatform& pf, const std::string& name) {
+  tap(a, kTapCardX, kTapQuizY);
+  bool sound = true;
+  int asked = 0;
+  while (!a.quizFinished() && asked < 200) {
+    sound = sound && optionsSound(a);
+    tapOption(a, a.quizCorrectOption());
+    pf.now += 1000;
+    a.tick();
+    a.flush();
+    asked++;
+  }
+  std::printf("     %s: %d questions\n", name.c_str(), asked);
+  check(sound && a.quizFinished() && a.quizRight() == asked && asked > 40,
+        "full round: every question sound and answerable");
+  tap(a, 1029, 1765); // Menü
 }
 
 } // namespace
@@ -295,9 +455,9 @@ main(int argc, char** argv) {
   check(a.screenName() == "home", "starts on home screen");
 
   // Select the ka row too, then learn.
-  tap(a, 60 + 162 + 74, 684 + 70);
+  tap(a, 60 + 162 + 74, kTapGroupY);
   save(a, "home-ka-selected");
-  tap(a, 700, 1160);
+  tap(a, kTapCardX, kTapLearnY);
   check(a.screenName() == "practice", "Lernen opens practice");
   save(a, "learn-a-start");
 
@@ -334,7 +494,7 @@ main(int argc, char** argv) {
   // Back to menu, practice (from memory).
   tap(a, 120, 56);
   check(a.screenName() == "home", "Menü returns home");
-  tap(a, 700, 1285);
+  tap(a, kTapCardX, kTapPracticeY);
   check(a.screenName() == "practice", "Üben opens practice");
   save(a, "practice-start");
   // Ask for a hint, then write the kana correctly.
@@ -345,14 +505,14 @@ main(int argc, char** argv) {
 
   // Test with nothing learnt in the katakana set shows a notice.
   tap(a, 120, 56);
-  tap(a, 1029, 486);
-  tap(a, 700, 1435);
+  tap(a, kTapKatakanaX, kTapScriptY);
+  tap(a, kTapCardX, kTapTestY);
   check(a.screenName() == "home", "test without learnt kana stays home");
   save(a, "home-katakana-notice");
-  tap(a, 375, 486);
+  tap(a, kTapHiraganaX, kTapScriptY);
 
   // Test mode on the kana learnt above.
-  tap(a, 700, 1435);
+  tap(a, kTapCardX, kTapTestY);
   save(a, "test-start");
   for (int round = 0; round < 12 && a.screenName() == "practice"; round++) {
     // Find out which kana is asked by trying all of them is cheating; the
@@ -377,10 +537,17 @@ main(int argc, char** argv) {
   gFonts = &fonts;
   tap(a, 120, 56);
   sheetTests(a);
+
+  // Matching game on the a + ka rows, then full rounds per script.
+  quizTests(a, pf);
+
   sheetAllKana(a, kana::Script::Hiragana, "Hiragana");
-  tap(a, 1029, 486); // Katakana
+  quizRound(a, pf, "Hiragana");
+  tap(a, kTapKatakanaX, kTapScriptY);
   sheetAllKana(a, kana::Script::Katakana, "Katakana");
-  tap(a, 375, 486);
+  quizRound(a, pf, "Katakana");
+  save(a, "home-katakana");
+  tap(a, kTapHiraganaX, kTapScriptY);
 
   a.powerButton();
   a.flush();
