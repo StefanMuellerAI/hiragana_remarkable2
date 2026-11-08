@@ -5,7 +5,7 @@ Du schreibst mit dem Stift, und die App prüft **jeden einzelnen Strich** sofort
 Richtung, Reihenfolge und Form. Bei einem Fehler zeigt sie dir den richtigen Strich mit Pfeil.
 
 Auf der Startseite wählst du **Hiragana**, **Katakana** oder **Kanji N5**; alle Modi üben immer den vollen
-Zeichensatz dieser Schrift. Bei Kanji (79 Zeichen der verbreiteten JLPT-N5-Liste) wird statt der Lautschrift
+Zeichensatz dieser Schrift. Bei Kanji (die 103 Zeichen der heute verbreiteten JLPT-N5-Liste) wird statt der Lautschrift
 die deutsche Bedeutung abgefragt, die Lesungen (kun in Hiragana, on in Katakana) stehen dabei; im Schreibblatt
 sind die Kästchen für Kanji größer (ca. 2,4 cm, 5 pro Zeile).
 
@@ -23,7 +23,7 @@ sind die Kästchen für Kanji größer (ca. 2,4 cm, 5 pro Zeile).
 - **Zuordnen** – kleines Spiel: zu einem Zeichen die richtige Lautschrift (bei Kanji: Bedeutung) aus drei wählen,
   oder umgekehrt das richtige Zeichen (gemischt). Jedes Zeichen der gewählten Schrift kommt einmal pro Runde dran.
   Am Ende: Ergebnis und „Fehler nochmal“. Wird nicht gespeichert.
-- **Fortschritt** – Übersicht aller 151 Kana (Hiragana, Katakana, mit Dakuten, kleine Kana, ー) und 79 Kanji mit Lernstufe.
+- **Fortschritt** – Übersicht aller 151 Kana (Hiragana, Katakana, mit Dakuten, kleine Kana, ー) und 103 Kanji mit Lernstufe.
 - Einschaltknopf = Ruhezustand, nach 10 Minuten ohne Eingabe schläft das Gerät automatisch.
 
 ## Was auf dem Gerät verändert wird – und was nicht

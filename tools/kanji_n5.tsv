@@ -1,5 +1,7 @@
-# Kanji für JLPT N5 (verbreitete Liste mit 79 Zeichen; seit 2010 gibt es keine offizielle Liste).
+# Kanji für JLPT N5: die heute verbreitete Liste mit 103 Zeichen (die ältere Liste aus
+# der Zeit vor 2010 hatte 79–81; seit 2010 gibt es keine offizielle Liste).
 # Spalten (Tab-getrennt): Zeichen, deutsche Bedeutung, Lesungen (kun in Hiragana, on in Katakana).
+# Bedeutungen müssen eindeutig sein (sie sind die Antworten im Spiel „Zuordnen“).
 # Reihenfolge = Reihenfolge in der App. Strichdaten: KanjiVG, siehe tools/gen_kanji_data.py.
 一	eins	ひと(つ)・イチ
 二	zwei	ふた(つ)・ニ
@@ -24,8 +26,10 @@
 土	Erde, Boden	つち・ド・ト
 年	Jahr	とし・ネン
 時	Zeit, Stunde	とき・ジ
+分	Minute, teilen	わ(ける)・フン・ブン
 今	jetzt	いま・コン
 毎	jeder	マイ
+週	Woche	シュウ
 半	Hälfte	なか(ば)・ハン
 午	Mittag	ゴ
 間	Zwischenraum	あいだ・ま・カン
@@ -50,20 +54,38 @@
 母	Mutter	はは・ボ
 友	Freund	とも・ユウ
 名	Name	な・メイ
+口	Mund	くち・コウ
+目	Auge	め・モク
+耳	Ohr	みみ・ジ
+手	Hand	て・シュ
+足	Fuß, genug	あし・た(りる)・ソク
 山	Berg	やま・サン
 川	Fluss	かわ・セン
 天	Himmel	あめ・テン
+空	Luftraum, leer	そら・から・クウ
 気	Geist, Stimmung	キ・ケ
 雨	Regen	あめ・ウ
+花	Blume	はな・カ
+魚	Fisch	さかな・ギョ
 白	weiß	しろ・ハク
 大	groß	おお(きい)・ダイ
 小	klein	ちい(さい)・ショウ
 長	lang	なが(い)・チョウ
 高	hoch, teuer	たか(い)・コウ
+安	billig, ruhig	やす(い)・アン
+新	neu	あたら(しい)・シン
+古	alt	ふる(い)・コ
+多	viel	おお(い)・タ
+少	wenig	すく(ない)・すこ(し)・ショウ
 本	Buch, Ursprung	もと・ホン
 国	Land	くに・コク
 学	lernen	まな(ぶ)・ガク
 校	Schule	コウ
+会	treffen	あ(う)・カイ
+社	Firma, Schrein	やしろ・シャ
+店	Laden	みせ・テン
+駅	Bahnhof	エキ
+道	Weg, Straße	みち・ドウ
 生	Leben, geboren	い(きる)・う(まれる)・セイ
 語	Sprache, Wort	かた(る)・ゴ
 電	Elektrizität	デン
@@ -73,10 +95,14 @@
 来	kommen	く(る)・ライ
 出	hinausgehen	で(る)・だ(す)・シュツ
 入	hineingehen	はい(る)・い(れる)・ニュウ
+立	stehen	た(つ)・リツ
 休	ruhen	やす(む)・キュウ
 見	sehen	み(る)・ケン
 聞	hören	き(く)・ブン
+言	sagen	い(う)・ゲン・ゴン
 話	sprechen	はな(す)・ワ
 読	lesen	よ(む)・ドク
 書	schreiben	か(く)・ショ
 食	essen	た(べる)・ショク
+飲	trinken	の(む)・イン
+買	kaufen	か(う)・バイ

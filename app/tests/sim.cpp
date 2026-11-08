@@ -496,9 +496,10 @@ kanjiTests(App& a, FakePlatform& pf) {
     a.flush();
   }
   // Skip ahead to 語 (14 strokes) for the long stroke-order strip.
-  for (int i = 0; i < 61; i++) {
+  for (int i = 0; i < 150 && a.practiceGlyph() != "語"; i++) {
     tap(a, 1152, 1782);
   }
+  check(a.practiceGlyph() == "語", "Lernen reaches 語");
   save(a, "kanji-learn-go");
   const auto& go = *kana::find("語");
   writeStroke(a, go, 0);

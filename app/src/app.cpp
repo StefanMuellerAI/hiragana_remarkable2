@@ -601,8 +601,10 @@ App::drawProgress() {
 
   const int today = platform_.today();
   int learnt = 0, solid = 0, due = 0, total = 0;
-  // One character with its Lernkartei box (1–6) underneath.
-  auto cell = [&](const kana::Kana& k, int cx, int gy) {
+  // One character with its Lernkartei box (1–6) underneath, as `seg` px
+  // squares every `step` px, starting `left` px left of the centre.
+  auto cell = [&](const kana::Kana& k, int cx, int gy, int step = 18, int seg = 14,
+                  int left = 51) {
     const auto c = progress_.get(k.glyph);
     total++;
     learnt += c.box > 0;
@@ -611,19 +613,19 @@ App::drawProgress() {
     canvas_.textCentered(fonts_, FontId::Kana, 96, k.glyph, cx, gy + 100,
                          c.box > 0 ? gfx::kBlack : gfx::kLight);
     for (int b = 0; b < kana::Progress::kMaxBox; b++) {
-      const Rect seg = Rect::xywh(cx - 51 + b * 18, gy + 128, 14, 14);
+      const Rect r = Rect::xywh(cx - left + b * step, gy + 128, seg, seg);
       if (b < c.box) {
-        canvas_.fill(seg, gfx::kBlack);
+        canvas_.fill(r, gfx::kBlack);
       } else {
-        canvas_.frame(seg, 2, gfx::kLight);
+        canvas_.frame(r, 2, gfx::kLight);
       }
     }
   };
   if (script_ == kana::Script::Kanji) {
-    // Kanji: a plain grid, ten per row.
+    // Kanji: a plain grid, twelve per row (103 kanji = 9 rows).
     int i = 0;
     for (int ki : scriptKana()) {
-      cell(kana::all()[ki], 60 + (i % 10) * 128 + 64, 330 + (i / 10) * 160);
+      cell(kana::all()[ki], 60 + (i % 12) * 107 + 53, 330 + (i / 12) * 150, 15, 12, 43);
       i++;
     }
   } else {
@@ -678,7 +680,7 @@ App::drawSystem() {
   });
 
   const char* info[] = {
-    "Kana-Dojo 1.4 – Schreibtrainer für Hiragana, Katakana und Kanji",
+    "Kana-Dojo 1.5 – Schreibtrainer für Hiragana, Katakana und Kanji",
     "Strichdaten: KanjiVG (Ulrich Apel, CC BY-SA 3.0)",
     "Schriften: Klee One, Noto Sans (SIL Open Font License)",
     "Display-Treiber: rm2fb / rM2-stuff von timower (GPL-3.0)",
