@@ -88,11 +88,9 @@ check(bool ok, const char* what) {
 
 // Home screen tap targets (layout mirrors drawHome).
 constexpr int kTapCardX = 700;
-constexpr int kTapLearnY = 1030, kTapPracticeY = 1170, kTapTestY = 1310, kTapSheetY = 1450,
-              kTapQuizY = 1590;
-constexpr int kTapScriptY = 420, kTapHiraganaX = 375, kTapKatakanaX = 1029;
-constexpr int kTapAllX = 1084, kTapAllY = 541;
-constexpr int kTapGroupY = 598 + 70; // first row of the gyō buttons
+constexpr int kTapLearnY = 760, kTapPracticeY = 956, kTapTestY = 1152, kTapSheetY = 1348,
+              kTapQuizY = 1544;
+constexpr int kTapScriptY = 487, kTapHiraganaX = 375, kTapKatakanaX = 1029;
 
 // ----- writing sheet helpers (layout mirrors app.cpp) -----
 
@@ -247,9 +245,8 @@ sheetTests(App& a) {
 // position variation, line by line.
 void
 sheetAllKana(App& a, kana::Script script, const std::string& name) {
-  tap(a, kTapAllX, kTapAllY);
   tap(a, kTapCardX, kTapSheetY);
-  check(a.screenName() == "sheet", "sheet opens with all rows");
+  check(a.screenName() == "sheet", "sheet opens");
   std::vector<int> order; // same order as the app: groups are contiguous
   for (const auto& k : kana::all()) {
     if (k.script == script) {
@@ -389,6 +386,7 @@ quizTests(App& a, FakePlatform& pf) {
   }
   check(sound, "three different options, exactly one right");
   check(sawKana && sawReading, "both directions are asked");
+  check(asked == 75, "a round covers the full hiragana set (75)");
   check(wrongWaited, "after a wrong answer it waits for Weiter");
   check(a.quizFinished() && a.quizRight() == asked - 1 && a.quizWrong() == 1,
         "round ends with the score");
@@ -454,9 +452,6 @@ main(int argc, char** argv) {
   save(a, "home");
   check(a.screenName() == "home", "starts on home screen");
 
-  // Select the ka row too, then learn.
-  tap(a, 60 + 162 + 74, kTapGroupY);
-  save(a, "home-ka-selected");
   tap(a, kTapCardX, kTapLearnY);
   check(a.screenName() == "practice", "Lernen opens practice");
   save(a, "learn-a-start");
@@ -538,7 +533,7 @@ main(int argc, char** argv) {
   tap(a, 120, 56);
   sheetTests(a);
 
-  // Matching game on the a + ka rows, then full rounds per script.
+  // Matching game, then full rounds per script.
   quizTests(a, pf);
 
   sheetAllKana(a, kana::Script::Hiragana, "Hiragana");

@@ -4,9 +4,13 @@ Kana-Dojo verwandelt ein reMarkable 2 in einen Schreibtrainer für japanische Si
 Du schreibst mit dem Stift, und die App prüft **jeden einzelnen Strich** sofort:
 Richtung, Reihenfolge und Form. Bei einem Fehler zeigt sie dir den richtigen Strich mit Pfeil.
 
+Auf der Startseite wählst du Hiragana oder Katakana; alle Modi üben immer den vollen Zeichensatz dieser Schrift.
+
 - **Lernen** – Zeichen mit grauer Vorlage nachfahren, mit Strichnummern und Strichfolge-Leiste.
 - **Üben** – aus dem Gedächtnis schreiben (nur die Lautschrift wird angezeigt), mit Korrektur und „Tipp“-Knopf.
 - **Test** – Lernkartei mit 6 Stufen: fällige Zeichen werden wiederholt, Fehler schicken ein Zeichen zurück auf Stufe 1.
+  Ein Zeichen kommt in die Kartei, sobald es in „Lernen“ einmal fertig geschrieben wurde. Nach jeder richtigen
+  Antwort ist es erst wieder nach 1, 3, 7, 14 und dann 30 Tagen fällig – an Tagen ohne fällige Zeichen steht der Test auf 0.
 - **Schreibblatt** – wie ein Übungsblatt: pro Zeile ein Zeichen als Vorlage und 6 Kästchen (ca. 2 cm) zum Wiederholen.
   Jedes Zeichen wird Strich für Strich geprüft; bei falscher Reihenfolge, Richtung oder Form wird es gelöscht
   und die Vorlage zeigt den richtigen Strich mit Pfeil. Nur richtig geschriebene Zeichen bleiben stehen.
@@ -14,8 +18,8 @@ Richtung, Reihenfolge und Form. Bei einem Fehler zeigt sie dir den richtigen Str
   der Zeile davor richtig beschrieben sind (gesperrte Zeilen sind ausgegraut).
   Blättern mit den Knöpfen oder per Wischen mit dem Finger. Beim Verlassen wird das Blatt geleert, der Lernstand bleibt unberührt.
 - **Zuordnen** – kleines Spiel: zu einem Zeichen die richtige Lautschrift aus drei wählen, oder zu einer Lautschrift
-  das richtige Zeichen (gemischt). Jedes ausgewählte Zeichen kommt einmal pro Runde dran; Hiragana oder Katakana
-  je nach Schalter auf der Startseite. Am Ende: Ergebnis und „Fehler nochmal“. Wird nicht gespeichert.
+  das richtige Zeichen (gemischt). Jedes Zeichen der gewählten Schrift kommt einmal pro Runde dran.
+  Am Ende: Ergebnis und „Fehler nochmal“. Wird nicht gespeichert.
 - **Fortschritt** – Übersicht aller 151 Zeichen (Hiragana, Katakana, mit Dakuten, kleine Kana, ー) mit Lernstufe.
 - Einschaltknopf = Ruhezustand, nach 10 Minuten ohne Eingabe schläft das Gerät automatisch.
 

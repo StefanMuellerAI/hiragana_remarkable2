@@ -4,7 +4,6 @@
 #include <cmath>
 #include <cstdio>
 #include <random>
-#include <sstream>
 
 using gfx::FontId;
 using gfx::Rect;
@@ -49,24 +48,12 @@ scriptKey(kana::Script s) {
 } // namespace
 
 App::App(Platform& platform, const gfx::Fonts& fonts, kana::Progress& progress)
-  : platform_(platform), fonts_(fonts), progress_(progress) {
-  groupSelected_.assign(kana::groups().size(), false);
-}
+  : platform_(platform), fonts_(fonts), progress_(progress) {}
 
 void
 App::start() {
   script_ = progress_.setting("script", "H") == "K" ? kana::Script::Katakana
                                                      : kana::Script::Hiragana;
-  for (const auto& g : kana::groups()) {
-    std::string list = progress_.setting("groups." + scriptKey(g.script), "a");
-    std::istringstream ss(list);
-    std::string name;
-    while (std::getline(ss, name, ',')) {
-      if (name == g.name) {
-        groupSelected_[g.index] = true;
-      }
-    }
-  }
   lastInputMs_ = platform_.nowMs();
   show(Screen::Home);
 }
@@ -208,23 +195,23 @@ App::drawHome() {
     const int w = fonts_.textWidth(FontId::Regular, 26, b);
     canvas_.text(fonts_, FontId::Regular, 26, b, W - 40 - w, 50, gfx::kDark);
   }
-  canvas_.textCentered(fonts_, FontId::Kana, 150, "かな道場", W / 2, 200, gfx::kBlack);
+  canvas_.textCentered(fonts_, FontId::Kana, 150, "かな道場", W / 2, 235, gfx::kBlack);
   canvas_.textCentered(fonts_, FontId::Regular, 32,
                        "Kana-Dojo · Hiragana und Katakana schreiben lernen",
-                       W / 2, 262, gfx::kDark);
+                       W / 2, 305, gfx::kDark);
 
-  // Script toggle
-  canvas_.text(fonts_, FontId::Bold, 32, "Schrift", 60, 336, gfx::kBlack);
+  // Script toggle: every mode works on the full set of the chosen script.
+  canvas_.text(fonts_, FontId::Bold, 32, "Schrift", 60, 392, gfx::kBlack);
   for (int i = 0; i < 2; i++) {
     const auto s = static_cast<kana::Script>(i);
-    const Rect r = Rect::xywh(60 + i * 654, 356, 630, 130);
+    const Rect r = Rect::xywh(60 + i * 654, 412, 630, 150);
     const bool sel = s == script_;
     canvas_.roundRect(r, 18, sel ? gfx::kBlack : gfx::kWhite, 4, gfx::kBlack);
     const uint8_t fg = sel ? gfx::kWhite : gfx::kBlack;
     canvas_.textCentered(fonts_, FontId::Kana, 64,
-                         i == 0 ? "ひらがな" : "カタカナ", r.cx(), r.y0 + 72, fg);
+                         i == 0 ? "ひらがな" : "カタカナ", r.cx(), r.y0 + 82, fg);
     canvas_.textCentered(fonts_, FontId::Regular, 32, scriptName(s), r.cx(),
-                         r.y0 + 114, fg);
+                         r.y0 + 128, fg);
     buttons_.push_back({ r, [this, s] {
                           script_ = s;
                           progress_.setSetting("script", scriptKey(s));
@@ -234,62 +221,9 @@ App::drawHome() {
                         } });
   }
 
-  // Row (gyō) selection
-  canvas_.text(fonts_, FontId::Bold, 32, "Reihen", 60, 556, gfx::kBlack);
-  auto setAll = [this](bool on) {
-    std::string list;
-    for (const auto& g : kana::groups()) {
-      if (g.script == script_) {
-        groupSelected_[g.index] = on;
-        if (on) {
-          list += (list.empty() ? "" : ",") + g.name;
-        }
-      }
-    }
-    progress_.setSetting("groups." + scriptKey(script_), list);
-    progress_.save();
-    redraw();
-    invalidate(canvas_.rect(), Refresh::Ui);
-  };
-  drawButton(Rect::xywh(1004, 508, 160, 66), "Alle", false, [setAll] { setAll(true); });
-  drawButton(Rect::xywh(1184, 508, 160, 66), "Keine", false, [setAll] { setAll(false); });
-
-  int col = 0, row = 0;
-  for (const auto& g : kana::groups()) {
-    if (g.script != script_) {
-      continue;
-    }
-    const Rect r = Rect::xywh(60 + col * 162, 598 + row * 156, 148, 140);
-    const bool sel = groupSelected_[g.index];
-    canvas_.roundRect(r, 16, sel ? gfx::kBlack : gfx::kWhite, 3,
-                      sel ? gfx::kBlack : gfx::kMid);
-    const uint8_t fg = sel ? gfx::kWhite : gfx::kBlack;
-    const auto& first = kana::all()[g.kana.front()];
-    canvas_.textCentered(fonts_, FontId::Kana, 64, first.glyph, r.cx(), r.y0 + 80, fg);
-    canvas_.textCentered(fonts_, FontId::Regular, 26, g.name, r.cx(), r.y0 + 124, fg);
-    const int gi = g.index;
-    buttons_.push_back({ r, [this, gi] {
-                          groupSelected_[gi] = !groupSelected_[gi];
-                          std::string list;
-                          for (const auto& gg : kana::groups()) {
-                            if (gg.script == script_ && groupSelected_[gg.index]) {
-                              list += (list.empty() ? "" : ",") + gg.name;
-                            }
-                          }
-                          progress_.setSetting("groups." + scriptKey(script_), list);
-                          progress_.save();
-                          redraw();
-                          invalidate(canvas_.rect(), Refresh::Ui);
-                        } });
-    if (++col == 8) {
-      col = 0;
-      row++;
-    }
-  }
-
   // Modes
-  canvas_.text(fonts_, FontId::Bold, 32, "Üben", 60, 950, gfx::kBlack);
-  const int n = static_cast<int>(selectedKana().size());
+  canvas_.text(fonts_, FontId::Bold, 32, "Üben", 60, 650, gfx::kBlack);
+  const int n = static_cast<int>(scriptKana().size());
   const int due = dueCount();
   struct ModeInfo {
     const char* title;
@@ -308,15 +242,15 @@ App::drawHome() {
     { "Schreibblatt", "Zeile für Zeile schreiben – Fehler werden gelöscht",
       std::to_string(n) + " Zeilen", [this] { openSheet(); } },
     { "Zuordnen", "Spiel: Zeichen und Lautschrift richtig zuordnen",
-      std::to_string(n) + " Fragen", [this] { startQuiz(selectedKana()); } },
+      std::to_string(n) + " Fragen", [this] { startQuiz(scriptKana()); } },
   };
   for (int i = 0; i < 5; i++) {
-    const Rect r = Rect::xywh(60, 970 + i * 140, 1284, 128);
+    const Rect r = Rect::xywh(60, 672 + i * 196, 1284, 176);
     canvas_.roundRect(r, 18, gfx::kWhite, 4, gfx::kBlack);
-    canvas_.text(fonts_, FontId::Bold, 52, modes[i].title, r.x0 + 40, r.y0 + 60, gfx::kBlack);
-    canvas_.text(fonts_, FontId::Regular, 32, modes[i].desc, r.x0 + 40, r.y0 + 106, gfx::kDark);
+    canvas_.text(fonts_, FontId::Bold, 52, modes[i].title, r.x0 + 40, r.y0 + 78, gfx::kBlack);
+    canvas_.text(fonts_, FontId::Regular, 32, modes[i].desc, r.x0 + 40, r.y0 + 132, gfx::kDark);
     const int w = fonts_.textWidth(FontId::Bold, 40, modes[i].right);
-    canvas_.text(fonts_, FontId::Bold, 40, modes[i].right, r.x1 - 50 - w, r.y0 + 80,
+    canvas_.text(fonts_, FontId::Bold, 40, modes[i].right, r.x1 - 50 - w, r.y0 + 102,
                  gfx::kBlack);
     buttons_.push_back({ r, modes[i].action });
   }
@@ -664,7 +598,7 @@ App::drawSystem() {
   });
 
   const char* info[] = {
-    "Kana-Dojo 1.2 – Schreibtrainer für Hiragana und Katakana",
+    "Kana-Dojo 1.3 – Schreibtrainer für Hiragana und Katakana",
     "Strichdaten: KanjiVG (Ulrich Apel, CC BY-SA 3.0)",
     "Schriften: Klee One, Noto Sans (SIL Open Font License)",
     "Display-Treiber: rm2fb / rM2-stuff von timower (GPL-3.0)",
@@ -677,19 +611,13 @@ App::drawSystem() {
 
 // ---------------------------------------------------------------- session --
 
+// All kana of the script chosen on the home screen, in table order.
 std::vector<int>
-App::selectedKana() const {
+App::scriptKana() const {
   std::vector<int> out;
-  for (const auto& g : kana::groups()) {
-    if (g.script == script_ && groupSelected_[g.index]) {
-      out.insert(out.end(), g.kana.begin(), g.kana.end());
-    }
-  }
-  if (out.empty()) {
-    for (const auto& k : kana::all()) {
-      if (k.script == script_) {
-        out.push_back(k.index);
-      }
+  for (const auto& k : kana::all()) {
+    if (k.script == script_) {
+      out.push_back(k.index);
     }
   }
   return out;
@@ -699,7 +627,7 @@ int
 App::dueCount() const {
   const int today = platform_.today();
   int n = 0;
-  for (int i : selectedKana()) {
+  for (int i : scriptKana()) {
     n += progress_.isDue(kana::all()[i].glyph, today);
   }
   return n;
@@ -707,7 +635,7 @@ App::dueCount() const {
 
 void
 App::startMode(Mode mode) {
-  std::vector<int> sel = selectedKana();
+  std::vector<int> sel = scriptKana();
   std::mt19937 rng(static_cast<uint32_t>(platform_.nowMs()));
   std::vector<int> queue;
   if (mode == Mode::Learn) {
@@ -975,7 +903,7 @@ App::sheetCurrentLine() const {
 void
 App::openSheet() {
   sheet_.clear();
-  for (int i : selectedKana()) {
+  for (int i : scriptKana()) {
     SheetLine line;
     line.kana = i;
     line.cells.resize(kSheetCols + 1);
@@ -1353,29 +1281,16 @@ App::makeQuizQuestion() {
   const std::string label = quizLabel(tk);
   quizShowKana_ = (rng() & 1u) != 0;
 
-  // Wrong answers: other kana with a different reading, from the selection
-  // on the home screen, or from the whole script if that's too small.
-  auto collect = [&](const std::vector<int>& pool) {
-    std::vector<int> out;
-    std::vector<std::string> seen{ label };
-    for (int i : pool) {
-      const std::string l = quizLabel(kana::all()[i]);
-      if (std::find(seen.begin(), seen.end(), l) == seen.end()) {
-        seen.push_back(l);
-        out.push_back(i);
-      }
+  // Wrong answers: other kana of the same script with a different reading,
+  // so there's never a second right answer.
+  std::vector<int> wrong;
+  std::vector<std::string> seen{ label };
+  for (const auto& k : kana::all()) {
+    const std::string l = quizLabel(k);
+    if (k.script == tk.script && std::find(seen.begin(), seen.end(), l) == seen.end()) {
+      seen.push_back(l);
+      wrong.push_back(k.index);
     }
-    return out;
-  };
-  std::vector<int> wrong = collect(selectedKana());
-  if (wrong.size() < 2) {
-    std::vector<int> all;
-    for (const auto& k : kana::all()) {
-      if (k.script == tk.script) {
-        all.push_back(k.index);
-      }
-    }
-    wrong = collect(all);
   }
   std::shuffle(wrong.begin(), wrong.end(), rng);
   quizOptions_ = { target, wrong[0], wrong[1] };
@@ -1537,7 +1452,7 @@ App::drawQuizEnd() {
                          gfx::kBlack);
   }
   drawButton(Rect::xywh(60, 1700, 630, 130), "Neue Runde", quizMistakes_.empty(),
-             [this] { startQuiz(selectedKana()); });
+             [this] { startQuiz(scriptKana()); });
   drawButton(Rect::xywh(714, 1700, 630, 130), "Menü", false, [this] { show(Screen::Home); });
 }
 
