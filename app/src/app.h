@@ -121,7 +121,7 @@ private:
   void clearHint();
   void handleStroke();
   std::string promptLabel(const kana::Kana& k) const;
-  std::vector<int> selectedKana() const;
+  std::vector<int> scriptKana() const;
   int dueCount() const;
 
   // Writing sheet ("Schreibblatt"): one line per kana, the model on the
@@ -152,8 +152,8 @@ private:
   std::string kanaName(const kana::Kana& k) const;
 
   // Matching game ("Zuordnen"): a kana with three readings to choose from,
-  // or a reading with three kana. Every selected kana comes up once per
-  // round; nothing is saved.
+  // or a reading with three kana. Every kana of the script comes up once
+  // per round; nothing is saved.
   void startQuiz(std::vector<int> queue);
   void makeQuizQuestion();
   void answerQuiz(int option);
@@ -178,9 +178,8 @@ private:
   };
   std::vector<Pending> pending_;
 
-  // Home selection
+  // Script chosen on the home screen; every mode uses all of its kana.
   kana::Script script_ = kana::Script::Hiragana;
-  std::vector<bool> groupSelected_;
 
   // Practice session
   Mode mode_ = Mode::Learn;
