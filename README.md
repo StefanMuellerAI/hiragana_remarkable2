@@ -1,10 +1,13 @@
-# かな道場 Kana-Dojo – Hiragana & Katakana schreiben auf dem reMarkable 2
+# かな道場 Kana-Dojo – Hiragana, Katakana & Kanji schreiben auf dem reMarkable 2
 
-Kana-Dojo verwandelt ein reMarkable 2 in einen Schreibtrainer für japanische Silbenschrift.
+Kana-Dojo verwandelt ein reMarkable 2 in einen Schreibtrainer für japanische Schrift.
 Du schreibst mit dem Stift, und die App prüft **jeden einzelnen Strich** sofort:
 Richtung, Reihenfolge und Form. Bei einem Fehler zeigt sie dir den richtigen Strich mit Pfeil.
 
-Auf der Startseite wählst du Hiragana oder Katakana; alle Modi üben immer den vollen Zeichensatz dieser Schrift.
+Auf der Startseite wählst du **Hiragana**, **Katakana** oder **Kanji N5**; alle Modi üben immer den vollen
+Zeichensatz dieser Schrift. Bei Kanji (79 Zeichen der verbreiteten JLPT-N5-Liste) wird statt der Lautschrift
+die deutsche Bedeutung abgefragt, die Lesungen (kun in Hiragana, on in Katakana) stehen dabei; im Schreibblatt
+sind die Kästchen für Kanji größer (ca. 2,4 cm, 5 pro Zeile).
 
 - **Lernen** – Zeichen mit grauer Vorlage nachfahren, mit Strichnummern und Strichfolge-Leiste.
 - **Üben** – aus dem Gedächtnis schreiben (nur die Lautschrift wird angezeigt), mit Korrektur und „Tipp“-Knopf.
@@ -17,10 +20,10 @@ Auf der Startseite wählst du Hiragana oder Katakana; alle Modi üben immer den 
   Die Zeilen werden der Reihe nach freigeschaltet: Die nächste Zeile nimmt erst Striche an, wenn alle Kästchen
   der Zeile davor richtig beschrieben sind (gesperrte Zeilen sind ausgegraut).
   Blättern mit den Knöpfen oder per Wischen mit dem Finger. Beim Verlassen wird das Blatt geleert, der Lernstand bleibt unberührt.
-- **Zuordnen** – kleines Spiel: zu einem Zeichen die richtige Lautschrift aus drei wählen, oder zu einer Lautschrift
-  das richtige Zeichen (gemischt). Jedes Zeichen der gewählten Schrift kommt einmal pro Runde dran.
+- **Zuordnen** – kleines Spiel: zu einem Zeichen die richtige Lautschrift (bei Kanji: Bedeutung) aus drei wählen,
+  oder umgekehrt das richtige Zeichen (gemischt). Jedes Zeichen der gewählten Schrift kommt einmal pro Runde dran.
   Am Ende: Ergebnis und „Fehler nochmal“. Wird nicht gespeichert.
-- **Fortschritt** – Übersicht aller 151 Zeichen (Hiragana, Katakana, mit Dakuten, kleine Kana, ー) mit Lernstufe.
+- **Fortschritt** – Übersicht aller 151 Kana (Hiragana, Katakana, mit Dakuten, kleine Kana, ー) und 79 Kanji mit Lernstufe.
 - Einschaltknopf = Ruhezustand, nach 10 Minuten ohne Eingabe schläft das Gerät automatisch.
 
 ## Was auf dem Gerät verändert wird – und was nicht
@@ -141,6 +144,8 @@ Das Ergebnis liegt in `dist/kana-dojo-rm2.zip` (und entpackt in `dist/kana-dojo/
 ```
 app/src/        App (C++17, ohne Abhängigkeiten): Prüflogik, Oberfläche, Lernkartei, Geräteanbindung
 app/src/kana_data.inc   Strichdaten aller Kana, erzeugt aus KanjiVG (tools/gen_kana_data.py)
+app/src/kanji_data.inc  Strichdaten der Kanji, erzeugt aus KanjiVG und tools/kanji_n5.tsv
+                        (Zeichen, deutsche Bedeutung, Lesungen) mit tools/gen_kanji_data.py
 app/tests/      checker_test.cpp   Prüflogik mit simulierten Handschriften
                 sim.cpp            UI-Simulator, schreibt Screenshots
                 fake_rm2fb.py      ARM-App gegen nachgebauten Bildschirm-Dienst (qemu)
@@ -152,6 +157,11 @@ mac/            Skripte für den Mac (Schlüssel, Verbindung, Backup, Testlauf, 
 patches/        eigene Änderungen am Bildschirm-Dienst
 third_party/rM2-stuff   Bildschirm-Dienst (Git-Submodul, Commit 451577081b9e)
 ```
+
+Weitere Kanji: Zeilen in `tools/kanji_n5.tsv` ergänzen, dann
+`python3 tools/gen_kanji_data.py <kanjivg>/kanji app/src/kanji_data.inc` und
+`python3 tools/gen_glyphs.py app/assets/glyphs.bin --extend <alte glyphs.bin>` – `--extend` übernimmt alle
+vorhandenen Schriftzeichen unverändert und rendert nur die neuen dazu.
 
 Tests (Linux, normales `g++`; die beiden Integrationstests brauchen zusätzlich `qemu-arm-static`):
 

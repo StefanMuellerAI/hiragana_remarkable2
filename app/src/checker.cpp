@@ -17,6 +17,13 @@ constexpr float kMaxLenRatio = 1.45f;
 constexpr float kMinLenForRatio = 20.f;
 constexpr float kMinLenForTurn = 30.f;
 constexpr float kPi = 3.14159265f;
+// Kanji only: a stroke that fits the due stroke still counts as a later
+// one if that later stroke matches clearly better (score below this share).
+// Catches swapped neighbours among close parallel strokes (書, 電, 聞 …).
+#ifndef KANJI_BETTER_FACTOR
+#define KANJI_BETTER_FACTOR 0.7f
+#endif
+constexpr float kKanjiBetterFactor = KANJI_BETTER_FACTOR;
 
 // Total signed turning along the stroke in degrees; averages a few segment
 // directions at each end so pen jitter there doesn't dominate.
@@ -171,6 +178,23 @@ Checker::add(const Line& stroke) {
   }
 
   const Match m = match(res.expected, stroke);
+  if (m.fits() && kana_.script == Script::Kanji) {
+    const float due = m.shape / m.tolerance + m.pos / kPosTolerance;
+    float best = due * kKanjiBetterFactor;
+    for (int j = res.expected + 1; j < static_cast<int>(ref_.size()); j++) {
+      const Match mj = match(j, stroke);
+      const float score = mj.shape / mj.tolerance + mj.pos / kPosTolerance;
+      if (mj.fits() && score < best) {
+        best = score;
+        res.matched = j;
+      }
+    }
+    if (res.matched >= 0) {
+      mistakes_++;
+      res.kind = StrokeResult::OtherStroke;
+      return res;
+    }
+  }
   if (m.fits()) {
     res.kind = StrokeResult::Good;
     res.quality = clamp01(1.f - 0.6f * (m.shape / m.tolerance) -

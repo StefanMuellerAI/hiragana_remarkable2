@@ -1,0 +1,82 @@
+# Kanji für JLPT N5 (verbreitete Liste mit 79 Zeichen; seit 2010 gibt es keine offizielle Liste).
+# Spalten (Tab-getrennt): Zeichen, deutsche Bedeutung, Lesungen (kun in Hiragana, on in Katakana).
+# Reihenfolge = Reihenfolge in der App. Strichdaten: KanjiVG, siehe tools/gen_kanji_data.py.
+一	eins	ひと(つ)・イチ
+二	zwei	ふた(つ)・ニ
+三	drei	みっ(つ)・サン
+四	vier	よん・よ(っつ)・シ
+五	fünf	いつ(つ)・ゴ
+六	sechs	むっ(つ)・ロク
+七	sieben	なな(つ)・シチ
+八	acht	やっ(つ)・ハチ
+九	neun	ここの(つ)・キュウ・ク
+十	zehn	とお・ジュウ
+百	hundert	ヒャク
+千	tausend	ち・セン
+万	zehntausend	マン・バン
+円	Yen, Kreis	まる(い)・エン
+日	Sonne, Tag	ひ・か・ニチ・ジツ
+月	Mond, Monat	つき・ゲツ・ガツ
+火	Feuer	ひ・カ
+水	Wasser	みず・スイ
+木	Baum, Holz	き・モク・ボク
+金	Gold, Geld	かね・キン
+土	Erde, Boden	つち・ド・ト
+年	Jahr	とし・ネン
+時	Zeit, Stunde	とき・ジ
+今	jetzt	いま・コン
+毎	jeder	マイ
+半	Hälfte	なか(ば)・ハン
+午	Mittag	ゴ
+間	Zwischenraum	あいだ・ま・カン
+先	vorher, Spitze	さき・セン
+後	hinter, nach	うし(ろ)・あと・ゴ
+前	vor, vorne	まえ・ゼン
+上	oben	うえ・あ(がる)・ジョウ
+下	unten	した・さ(がる)・カ・ゲ
+中	Mitte, innen	なか・チュウ
+外	draußen	そと・ガイ
+右	rechts	みぎ・ウ・ユウ
+左	links	ひだり・サ
+東	Osten	ひがし・トウ
+西	Westen	にし・セイ・サイ
+南	Süden	みなみ・ナン
+北	Norden	きた・ホク
+人	Mensch	ひと・ジン・ニン
+男	Mann	おとこ・ダン
+女	Frau	おんな・ジョ
+子	Kind	こ・シ
+父	Vater	ちち・フ
+母	Mutter	はは・ボ
+友	Freund	とも・ユウ
+名	Name	な・メイ
+山	Berg	やま・サン
+川	Fluss	かわ・セン
+天	Himmel	あめ・テン
+気	Geist, Stimmung	キ・ケ
+雨	Regen	あめ・ウ
+白	weiß	しろ・ハク
+大	groß	おお(きい)・ダイ
+小	klein	ちい(さい)・ショウ
+長	lang	なが(い)・チョウ
+高	hoch, teuer	たか(い)・コウ
+本	Buch, Ursprung	もと・ホン
+国	Land	くに・コク
+学	lernen	まな(ぶ)・ガク
+校	Schule	コウ
+生	Leben, geboren	い(きる)・う(まれる)・セイ
+語	Sprache, Wort	かた(る)・ゴ
+電	Elektrizität	デン
+車	Auto, Wagen	くるま・シャ
+何	was	なに・なん・カ
+行	gehen	い(く)・コウ
+来	kommen	く(る)・ライ
+出	hinausgehen	で(る)・だ(す)・シュツ
+入	hineingehen	はい(る)・い(れる)・ニュウ
+休	ruhen	やす(む)・キュウ
+見	sehen	み(る)・ケン
+聞	hören	き(く)・ブン
+話	sprechen	はな(す)・ワ
+読	lesen	よ(む)・ドク
+書	schreiben	か(く)・ショ
+食	essen	た(べる)・ショク

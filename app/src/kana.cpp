@@ -23,8 +23,15 @@ struct KanaGroupDef {
   uint8_t script;
   uint16_t firstKana, count;
 };
+struct KanjiDef {
+  const char* glyph;
+  const char* meaning;
+  const char* readings;
+  uint16_t firstStroke, strokeCount;
+};
 
 #include "kana_data.inc"
+#include "kanji_data.inc"
 
 struct Tables {
   std::vector<Kana> kana;
@@ -60,6 +67,34 @@ struct Tables {
       }
       groups.push_back(std::move(g));
     }
+
+    // Kanji come after all kana, so kana indices stay as they were.
+    Group n5;
+    n5.index = static_cast<int>(groups.size());
+    n5.name = "N5";
+    n5.script = Script::Kanji;
+    for (const auto& def : kKanjiDefs) {
+      Kana k;
+      k.index = static_cast<int>(kana.size());
+      k.glyph = def.glyph;
+      k.romaji = def.meaning;
+      k.readings = def.readings;
+      k.script = Script::Kanji;
+      k.group = n5.index;
+      for (int s = 0; s < def.strokeCount; s++) {
+        const auto& sd = kKanjiStrokes[def.firstStroke + s];
+        Stroke stroke;
+        stroke.label = { sd.lx, sd.ly };
+        for (int p = 0; p < sd.count; p++) {
+          const auto& kp = kKanjiPoints[sd.first + p];
+          stroke.points.push_back({ kp.x, kp.y });
+        }
+        k.strokes.push_back(std::move(stroke));
+      }
+      n5.kana.push_back(k.index);
+      kana.push_back(std::move(k));
+    }
+    groups.push_back(std::move(n5));
   }
 };
 
