@@ -21,28 +21,52 @@ constexpr int64_t kAutoAdvanceMs = 1300;
 constexpr int kFlashEvery = 6;
 constexpr size_t kSessionSize = 20;
 
-// Writing sheet layout: per line the model plus kSheetCols cells.
-constexpr int kSheetCell = 180; // about 2 cm on the tablet
-constexpr int kSheetCols = 6;
-constexpr int kSheetRows = 7; // lines per page
-constexpr int kSheetX0 = (W - (kSheetCols + 1) * kSheetCell) / 2;
-constexpr int kSheetY0 = 132;
-constexpr int kSheetPitch = 210;
+// Writing sheet layout: per line the model plus `cols` cells. Kanji get
+// bigger cells (and so fewer per line and page) than kana.
+struct SheetLayout {
+  int cell, cols, rows, pitch; // px, cells to write in, lines per page, line pitch
+  int x0() const { return (gfx::kWidth - (cols + 1) * cell) / 2; }
+  int y0() const { return 132; }
+};
+constexpr SheetLayout kKanaSheet{ 180, 6, 7, 210 };  // about 2 cm per cell
+constexpr SheetLayout kKanjiSheet{ 210, 5, 6, 240 }; // about 2.4 cm per cell
 constexpr int kSheetSpill = 10; // ink may leave its cell by this much
 constexpr float kSheetInk = 6.f;
 constexpr int kSheetFlashEvery = 3;
 const char* const kSheetHelp = "Schreib das Zeichen in die freien Kästchen seiner Zeile.";
 
+const SheetLayout&
+sheetLayout(kana::Script s) {
+  return s == kana::Script::Kanji ? kKanjiSheet : kKanaSheet;
+}
+
 const char* const kModeNames[] = { "Lernen", "Üben", "Test" };
 
 std::string
 scriptName(kana::Script s) {
-  return s == kana::Script::Hiragana ? "Hiragana" : "Katakana";
+  switch (s) {
+    case kana::Script::Hiragana:
+      return "Hiragana";
+    case kana::Script::Katakana:
+      return "Katakana";
+    case kana::Script::Kanji:
+      return "Kanji N5";
+  }
+  return "";
 }
 
+// Stored in progress.tsv; "H" and "K" are what older versions wrote.
 std::string
 scriptKey(kana::Script s) {
-  return s == kana::Script::Hiragana ? "H" : "K";
+  switch (s) {
+    case kana::Script::Hiragana:
+      return "H";
+    case kana::Script::Katakana:
+      return "K";
+    case kana::Script::Kanji:
+      return "J";
+  }
+  return "H";
 }
 
 } // namespace
@@ -52,8 +76,10 @@ App::App(Platform& platform, const gfx::Fonts& fonts, kana::Progress& progress)
 
 void
 App::start() {
-  script_ = progress_.setting("script", "H") == "K" ? kana::Script::Katakana
-                                                     : kana::Script::Hiragana;
+  const std::string key = progress_.setting("script", "H");
+  script_ = key == "K"   ? kana::Script::Katakana
+            : key == "J" ? kana::Script::Kanji
+                         : kana::Script::Hiragana;
   lastInputMs_ = platform_.nowMs();
   show(Screen::Home);
 }
@@ -197,19 +223,19 @@ App::drawHome() {
   }
   canvas_.textCentered(fonts_, FontId::Kana, 150, "かな道場", W / 2, 235, gfx::kBlack);
   canvas_.textCentered(fonts_, FontId::Regular, 32,
-                       "Kana-Dojo · Hiragana und Katakana schreiben lernen",
+                       "Kana-Dojo · Hiragana, Katakana und Kanji schreiben lernen",
                        W / 2, 305, gfx::kDark);
 
   // Script toggle: every mode works on the full set of the chosen script.
   canvas_.text(fonts_, FontId::Bold, 32, "Schrift", 60, 392, gfx::kBlack);
-  for (int i = 0; i < 2; i++) {
+  const char* const scriptGlyphs[] = { "ひらがな", "カタカナ", "漢字" };
+  for (int i = 0; i < 3; i++) {
     const auto s = static_cast<kana::Script>(i);
-    const Rect r = Rect::xywh(60 + i * 654, 412, 630, 150);
+    const Rect r = Rect::xywh(60 + i * 436, 412, 412, 150);
     const bool sel = s == script_;
     canvas_.roundRect(r, 18, sel ? gfx::kBlack : gfx::kWhite, 4, gfx::kBlack);
     const uint8_t fg = sel ? gfx::kWhite : gfx::kBlack;
-    canvas_.textCentered(fonts_, FontId::Kana, 64,
-                         i == 0 ? "ひらがな" : "カタカナ", r.cx(), r.y0 + 82, fg);
+    canvas_.textCentered(fonts_, FontId::Kana, 64, scriptGlyphs[i], r.cx(), r.y0 + 82, fg);
     canvas_.textCentered(fonts_, FontId::Regular, 32, scriptName(s), r.cx(),
                          r.y0 + 128, fg);
     buttons_.push_back({ r, [this, s] {
@@ -241,7 +267,9 @@ App::drawHome() {
       [this] { startMode(Mode::Test); } },
     { "Schreibblatt", "Zeile für Zeile schreiben – Fehler werden gelöscht",
       std::to_string(n) + " Zeilen", [this] { openSheet(); } },
-    { "Zuordnen", "Spiel: Zeichen und Lautschrift richtig zuordnen",
+    { "Zuordnen",
+      script_ == kana::Script::Kanji ? "Spiel: Zeichen und Bedeutung richtig zuordnen"
+                                     : "Spiel: Zeichen und Lautschrift richtig zuordnen",
       std::to_string(n) + " Fragen", [this] { startQuiz(scriptKana()); } },
   };
   for (int i = 0; i < 5; i++) {
@@ -292,6 +320,44 @@ App::drawPrompt() {
   const auto& k = kana::all()[queue_[pos_]];
   const Rect area{ 0, 118, W, 462 };
   canvas_.fill(area, gfx::kWhite);
+
+  if (k.script == kana::Script::Kanji) {
+    // Meaning big, readings and stroke count below, the kanji on the right;
+    // up to 14 strokes, so the stroke-order strip gets its own full row.
+    const int n = static_cast<int>(k.strokes.size());
+    const bool showGlyph = mode_ == Mode::Learn || kanaDone_;
+    const int maxW = W - 160 - (showGlyph ? 240 : 0);
+    int size = 40;
+    for (int s : { 72, 52 }) {
+      if (fonts_.textWidth(FontId::Bold, s, k.romaji) <= maxW) {
+        size = s;
+        break;
+      }
+    }
+    canvas_.text(fonts_, FontId::Bold, size, k.romaji, 80, 216, gfx::kBlack);
+    canvas_.text(fonts_, FontId::Kana, 44, k.readings, 84, 282, gfx::kDark);
+    if (mode_ != Mode::Test) {
+      canvas_.text(fonts_, FontId::Regular, 32,
+                   std::to_string(n) + (n == 1 ? " Strich" : " Striche"), 84, 328, gfx::kDark);
+    }
+    if (showGlyph) {
+      const int w = fonts_.textWidth(FontId::Kana, 150, k.glyph);
+      canvas_.text(fonts_, FontId::Kana, 150, k.glyph, W - 80 - w, 300, gfx::kBlack);
+    }
+    if (mode_ == Mode::Learn) {
+      const int gap = 8;
+      const int box = std::min(86, (W - 120 - (n - 1) * gap) / n);
+      for (int i = 0; i < n; i++) {
+        const Rect r = Rect::xywh(60 + i * (box + gap), 350, box, box);
+        canvas_.frame(r, 2, gfx::kLight);
+        drawKanaStrokes(k, r, i + 1, i, 3.5f, gfx::kMid, gfx::kBlack);
+        const auto& start = k.strokes[i].points.front();
+        const float s = box / kana::kGlyphSize;
+        canvas_.disk(r.x0 + start.x * s, r.y0 + start.y * s, 4, gfx::kBlack);
+      }
+    }
+    return;
+  }
 
   const std::string label = promptLabel(k);
   const bool longMark = k.romaji == "-";
@@ -427,8 +493,10 @@ void
 App::drawFeedback(const std::string& msg, bool bold) {
   message_ = msg;
   canvas_.fill(kFeedback, gfx::kWhite);
-  canvas_.textCentered(fonts_, bold ? FontId::Bold : FontId::Regular, 40, msg, W / 2,
-                       1662, gfx::kBlack);
+  // Long messages (kanji meanings) step down to 32 pt so they stay on screen.
+  const FontId font = bold ? FontId::Bold : FontId::Regular;
+  const int size = fonts_.textWidth(font, 40, msg) <= W - 40 ? 40 : 32;
+  canvas_.textCentered(fonts_, font, size, msg, W / 2, 1662, gfx::kBlack);
   invalidate(kFeedback, Refresh::Ui);
 }
 
@@ -517,9 +585,9 @@ App::drawSummary() {
 void
 App::drawProgress() {
   drawHeader("Fortschritt", "");
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < 3; i++) {
     const auto s = static_cast<kana::Script>(i);
-    const Rect r = Rect::xywh(60 + i * 654, 140, 630, 90);
+    const Rect r = Rect::xywh(60 + i * 436, 140, 412, 90);
     const bool sel = s == script_;
     canvas_.roundRect(r, 16, sel ? gfx::kBlack : gfx::kWhite, 4, gfx::kBlack);
     canvas_.textCentered(fonts_, FontId::Bold, 40, scriptName(s), r.cx(), r.cy() + 14,
@@ -533,34 +601,48 @@ App::drawProgress() {
 
   const int today = platform_.today();
   int learnt = 0, solid = 0, due = 0, total = 0;
-  int column = 0, row = 0;
-  for (const auto& g : kana::groups()) {
-    if (g.script != script_) {
-      continue;
-    }
-    const int gx = 60 + column * 654, gy = 330 + row * 172;
-    for (size_t i = 0; i < g.kana.size(); i++) {
-      const auto& k = kana::all()[g.kana[i]];
-      const auto c = progress_.get(k.glyph);
-      total++;
-      learnt += c.box > 0;
-      solid += c.box >= 4;
-      due += progress_.isDue(k.glyph, today);
-      const int cx = gx + 62 + int(i) * 126;
-      canvas_.textCentered(fonts_, FontId::Kana, 96, k.glyph, cx, gy + 100,
-                           c.box > 0 ? gfx::kBlack : gfx::kLight);
-      for (int b = 0; b < kana::Progress::kMaxBox; b++) {
-        const Rect seg = Rect::xywh(cx - 51 + b * 18, gy + 128, 14, 14);
-        if (b < c.box) {
-          canvas_.fill(seg, gfx::kBlack);
-        } else {
-          canvas_.frame(seg, 2, gfx::kLight);
-        }
+  // One character with its Lernkartei box (1–6) underneath, as `seg` px
+  // squares every `step` px, starting `left` px left of the centre.
+  auto cell = [&](const kana::Kana& k, int cx, int gy, int step = 18, int seg = 14,
+                  int left = 51) {
+    const auto c = progress_.get(k.glyph);
+    total++;
+    learnt += c.box > 0;
+    solid += c.box >= 4;
+    due += progress_.isDue(k.glyph, today);
+    canvas_.textCentered(fonts_, FontId::Kana, 96, k.glyph, cx, gy + 100,
+                         c.box > 0 ? gfx::kBlack : gfx::kLight);
+    for (int b = 0; b < kana::Progress::kMaxBox; b++) {
+      const Rect r = Rect::xywh(cx - left + b * step, gy + 128, seg, seg);
+      if (b < c.box) {
+        canvas_.fill(r, gfx::kBlack);
+      } else {
+        canvas_.frame(r, 2, gfx::kLight);
       }
     }
-    if (++row == 8) {
-      row = 0;
-      column++;
+  };
+  if (script_ == kana::Script::Kanji) {
+    // Kanji: a plain grid, twelve per row (103 kanji = 9 rows).
+    int i = 0;
+    for (int ki : scriptKana()) {
+      cell(kana::all()[ki], 60 + (i % 12) * 107 + 53, 330 + (i / 12) * 150, 15, 12, 43);
+      i++;
+    }
+  } else {
+    // Kana: their rows (a, ka, sa …) in two columns.
+    int column = 0, row = 0;
+    for (const auto& g : kana::groups()) {
+      if (g.script != script_) {
+        continue;
+      }
+      const int gx = 60 + column * 654, gy = 330 + row * 172;
+      for (size_t i = 0; i < g.kana.size(); i++) {
+        cell(kana::all()[g.kana[i]], gx + 62 + int(i) * 126, gy);
+      }
+      if (++row == 8) {
+        row = 0;
+        column++;
+      }
     }
   }
   const std::string summary = "Gelernt " + std::to_string(learnt) + " von " +
@@ -598,7 +680,7 @@ App::drawSystem() {
   });
 
   const char* info[] = {
-    "Kana-Dojo 1.3 – Schreibtrainer für Hiragana und Katakana",
+    "Kana-Dojo 1.5 – Schreibtrainer für Hiragana, Katakana und Kanji",
     "Strichdaten: KanjiVG (Ulrich Apel, CC BY-SA 3.0)",
     "Schriften: Klee One, Noto Sans (SIL Open Font License)",
     "Display-Treiber: rm2fb / rM2-stuff von timower (GPL-3.0)",
@@ -903,10 +985,11 @@ App::sheetCurrentLine() const {
 void
 App::openSheet() {
   sheet_.clear();
+  const SheetLayout& G = sheetLayout(script_);
   for (int i : scriptKana()) {
     SheetLine line;
     line.kana = i;
-    line.cells.resize(kSheetCols + 1);
+    line.cells.resize(G.cols + 1);
     sheet_.push_back(std::move(line));
   }
   sheetTop_ = 0;
@@ -923,43 +1006,46 @@ App::openSheet() {
 
 bool
 App::sheetVisible(int line) const {
-  return line >= sheetTop_ && line < sheetTop_ + kSheetRows &&
+  return line >= sheetTop_ && line < sheetTop_ + sheetLayout(script_).rows &&
          line < static_cast<int>(sheet_.size());
 }
 
 Rect
 App::sheetCellRect(int line, int cell) const {
+  const SheetLayout& G = sheetLayout(script_);
   const int row = line - sheetTop_;
-  return Rect::xywh(kSheetX0 + cell * kSheetCell, kSheetY0 + row * kSheetPitch, kSheetCell,
-                    kSheetCell);
+  return Rect::xywh(G.x0() + cell * G.cell, G.y0() + row * G.pitch, G.cell, G.cell);
 }
 
 Rect
 App::sheetBand(int line) const {
-  const int gap = (kSheetPitch - kSheetCell) / 2;
-  const int y = kSheetY0 + (line - sheetTop_) * kSheetPitch;
-  return { 0, y - gap, W, y + kSheetCell + gap };
+  const SheetLayout& G = sheetLayout(script_);
+  const int gap = (G.pitch - G.cell) / 2;
+  const int y = G.y0() + (line - sheetTop_) * G.pitch;
+  return { 0, y - gap, W, y + G.cell + gap };
 }
 
 Rect
 App::sheetGrid() const {
-  return { kSheetX0 - kSheetSpill, kSheetY0 - kSheetSpill,
-           kSheetX0 + (kSheetCols + 1) * kSheetCell + kSheetSpill,
-           kSheetY0 + (kSheetRows - 1) * kSheetPitch + kSheetCell + kSheetSpill };
+  const SheetLayout& G = sheetLayout(script_);
+  return { G.x0() - kSheetSpill, G.y0() - kSheetSpill,
+           G.x0() + (G.cols + 1) * G.cell + kSheetSpill,
+           G.y0() + (G.rows - 1) * G.pitch + G.cell + kSheetSpill };
 }
 
 bool
 App::sheetHit(float x, float y, int& line, int& cell) const {
-  for (int row = 0; row < kSheetRows; row++) {
+  const SheetLayout& G = sheetLayout(script_);
+  for (int row = 0; row < G.rows; row++) {
     const int l = sheetTop_ + row;
     if (l >= static_cast<int>(sheet_.size())) {
       break;
     }
-    const int y0 = kSheetY0 + row * kSheetPitch;
-    const Rect r = { kSheetX0, y0, kSheetX0 + (kSheetCols + 1) * kSheetCell, y0 + kSheetCell };
+    const int y0 = G.y0() + row * G.pitch;
+    const Rect r = { G.x0(), y0, G.x0() + (G.cols + 1) * G.cell, y0 + G.cell };
     if (r.contains(int(x), int(y))) {
       line = l;
-      cell = (int(x) - kSheetX0) / kSheetCell;
+      cell = (int(x) - G.x0()) / G.cell;
       return true;
     }
   }
@@ -973,6 +1059,7 @@ App::drawSheetLine(int line) {
   }
   const Rect band = sheetBand(line);
   canvas_.fill(band, gfx::kWhite);
+  const SheetLayout& G = sheetLayout(script_);
   const auto& L = sheet_[line];
   const auto& k = kana::all()[L.kana];
   const int strokes = static_cast<int>(k.strokes.size());
@@ -999,7 +1086,7 @@ App::drawSheetLine(int line) {
 
   // Empty cells with a light centre cross, like a practice sheet. The line
   // being written gets a bold frame, locked lines a faint one.
-  for (int c = 1; c <= kSheetCols; c++) {
+  for (int c = 1; c <= G.cols; c++) {
     const Rect r = sheetCellRect(line, c);
     if (!locked) {
       canvas_.dashedLine(r.cx(), r.y0 + 6, r.cx(), r.y1 - 6, 10, 2, gfx::kLight);
@@ -1008,11 +1095,11 @@ App::drawSheetLine(int line) {
     canvas_.frame(r, 1, locked ? gfx::kLight : gfx::kMid);
   }
   const uint8_t frameV = locked ? gfx::kLight : line == current ? gfx::kBlack : gfx::kDark;
-  canvas_.frame({ model.x0, model.y0, model.x0 + (kSheetCols + 1) * kSheetCell, model.y1 },
+  canvas_.frame({ model.x0, model.y0, model.x0 + (G.cols + 1) * G.cell, model.y1 },
                 line == current ? 5 : 3, frameV);
   canvas_.fill({ model.x1 - 1, model.y0, model.x1 + 2, model.y1 }, frameV);
 
-  for (int c = 1; c <= kSheetCols; c++) {
+  for (int c = 1; c <= G.cols; c++) {
     const auto& cell = L.cells[c];
     for (const auto& stroke : cell.ink) {
       canvas_.polyline(stroke, kSheetInk, gfx::kBlack);
@@ -1028,10 +1115,11 @@ App::drawSheetLine(int line) {
 void
 App::drawSheet() {
   const int total = static_cast<int>(sheet_.size());
-  const int pages = std::max(1, (total + kSheetRows - 1) / kSheetRows);
-  const int page = sheetTop_ / kSheetRows + 1;
+  const int rows = sheetLayout(script_).rows;
+  const int pages = std::max(1, (total + rows - 1) / rows);
+  const int page = sheetTop_ / rows + 1;
   drawHeader("Schreibblatt · " + scriptName(script_), "");
-  for (int row = 0; row < kSheetRows; row++) {
+  for (int row = 0; row < rows; row++) {
     drawSheetLine(sheetTop_ + row);
   }
   drawFeedback(message_.empty() ? kSheetHelp : message_, sheetMessageShown_);
@@ -1060,8 +1148,9 @@ App::sheetPage(int delta) {
   if (total == 0) {
     return;
   }
-  const int last = ((total - 1) / kSheetRows) * kSheetRows;
-  const int top = std::max(0, std::min(last, sheetTop_ + delta * kSheetRows));
+  const int rows = sheetLayout(script_).rows;
+  const int last = ((total - 1) / rows) * rows;
+  const int top = std::max(0, std::min(last, sheetTop_ + delta * rows));
   if (top == sheetTop_) {
     return;
   }
@@ -1101,14 +1190,15 @@ void
 App::handleSheetStroke() {
   const int line = sheetPenLine_, c = sheetPenCell_;
   sheetPenLine_ = sheetPenCell_ = -1;
-  if (line < 0 || line >= static_cast<int>(sheet_.size()) || c < 1 || c > kSheetCols) {
+  const SheetLayout& G = sheetLayout(script_);
+  if (line < 0 || line >= static_cast<int>(sheet_.size()) || c < 1 || c > G.cols) {
     current_.clear();
     return;
   }
   auto& cell = sheet_[line].cells[c];
   const auto& k = kana::all()[sheet_[line].kana];
   const Rect r = sheetCellRect(line, c);
-  const float s = kSheetCell / kana::kGlyphSize;
+  const float s = G.cell / kana::kGlyphSize;
   kana::Line stroke;
   for (const auto& [x, y] : current_) {
     stroke.push_back({ (x - r.x0) / s, (y - r.y0) / s });
@@ -1364,9 +1454,20 @@ App::drawQuizOption(int i, Rect r) {
   canvas_.roundRect(r, 24, bg, 4, answered && !right ? gfx::kMid : gfx::kBlack);
   if (quizShowKana_) {
     const std::string label = quizLabel(k);
-    int size = 40;
-    for (int s : { 72, 52 }) {
-      if (fonts_.textWidth(FontId::Bold, s, label) <= r.w() - 40) {
+    // Kanji meanings: one size for all three answers, so a long word
+    // doesn't look less likely. Kana keep their own size per answer.
+    std::vector<std::string> sizeFor{ label };
+    if (k.script == kana::Script::Kanji) {
+      sizeFor.clear();
+      for (int o : quizOptions_) {
+        sizeFor.push_back(quizLabel(kana::all()[o]));
+      }
+    }
+    int size = 32;
+    for (int s : { 72, 52, 40 }) {
+      if (std::all_of(sizeFor.begin(), sizeFor.end(), [&](const std::string& l) {
+            return fonts_.textWidth(FontId::Bold, s, l) <= r.w() - 40;
+          })) {
         size = s;
         break;
       }
@@ -1397,17 +1498,33 @@ App::drawQuiz() {
   drawHeader("Zuordnen · " + scriptName(script_),
              std::to_string(quizPos_ + 1) + " / " + std::to_string(quizQueue_.size()));
   const auto& k = kana::all()[quizQueue_[quizPos_]];
+  const bool kanji = k.script == kana::Script::Kanji;
   canvas_.roundRect(kQuizBig, 24, gfx::kFaint, 2, gfx::kLight);
   if (quizShowKana_) {
-    canvas_.textCentered(fonts_, FontId::Regular, 40, "Wie liest man dieses Zeichen?", W / 2,
-                         186, gfx::kDark);
+    canvas_.textCentered(fonts_, FontId::Regular, 40,
+                         kanji ? "Was bedeutet dieses Zeichen?" : "Wie liest man dieses Zeichen?",
+                         W / 2, 186, gfx::kDark);
     drawKanaStrokes(k, kQuizBig.inset(30), static_cast<int>(k.strokes.size()), -1, 22.f,
                     gfx::kBlack, gfx::kBlack);
   } else {
-    canvas_.textCentered(fonts_, FontId::Regular, 40, "Welches Zeichen ist das?", W / 2, 186,
+    canvas_.textCentered(fonts_, FontId::Regular, 40,
+                         kanji ? "Welches Zeichen bedeutet das?" : "Welches Zeichen ist das?",
+                         W / 2, 186, gfx::kDark);
+    const std::string label = quizLabel(k);
+    int size = 52;
+    for (int s : { 110, 72 }) {
+      if (fonts_.textWidth(FontId::Bold, s, label) <= kQuizBig.w() - 40) {
+        size = s;
+        break;
+      }
+    }
+    canvas_.textCentered(fonts_, FontId::Bold, size, label, W / 2,
+                         kQuizBig.cy() + size * 35 / 100, gfx::kBlack);
+  }
+  if (kanji && quizChosen_ >= 0) {
+    // After the answer: how the kanji is read.
+    canvas_.textCentered(fonts_, FontId::Kana, 44, k.glyph + "  " + k.readings, W / 2, 884,
                          gfx::kDark);
-    canvas_.textCentered(fonts_, FontId::Bold, 110, quizLabel(k), W / 2, kQuizBig.cy() + 38,
-                         gfx::kBlack);
   }
   for (int i = 0; i < 3; i++) {
     drawQuizOption(i, quizOptionRect(i));

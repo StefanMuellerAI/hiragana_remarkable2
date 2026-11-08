@@ -87,7 +87,12 @@ expect(bool ok, const char* what, double rate, double needed) {
 
 int
 main() {
-  const auto& kanaList = all();
+  // Kana and kanji are tested separately: sections 1–6 see exactly the kana
+  // they always saw (same order, same random numbers), kanji follow in 7.
+  std::vector<Kana> kanaList, kanjiList;
+  for (const auto& k : all()) {
+    (k.script == Script::Kanji ? kanjiList : kanaList).push_back(k);
+  }
   std::printf("%zu kana loaded\n", kanaList.size());
 
   // 1) Correct writing should pass.
@@ -276,6 +281,137 @@ main() {
                     dist(r.back(), { 10, 10 }) < 1e-4f &&
                     dist(r[2], { 10, 0 }) < 1e-3f;
     expect(ok, "resample endpoints", ok ? 1 : 0, 1);
+  }
+
+  // 7) Kanji (JLPT N5): many strokes, often parallel and close together.
+  std::printf("\n%zu kanji loaded\n", kanjiList.size());
+  {
+    int strokes = 0, good = 0;
+    std::map<std::string, int> badPerKanji;
+    for (int trial = 0; trial < 40; trial++) {
+      for (const auto& k : kanjiList) {
+        Hand h = randomHand(1.f);
+        Checker c(k);
+        for (const auto& s : k.strokes) {
+          auto r = c.add(write(s.points, h, 1.f));
+          strokes++;
+          if (r.kind == StrokeResult::Good) {
+            good++;
+          } else {
+            badPerKanji[k.glyph]++;
+            c.skip();
+          }
+        }
+      }
+    }
+    const double rate = double(good) / strokes;
+    expect(rate >= 0.98, "kanji: sloppy correct strokes accepted", rate, 0.98);
+    for (auto& [g, n] : badPerKanji) {
+      if (n > 6) {
+        std::printf("    rejected often: %s x%d\n", g.c_str(), n);
+      }
+    }
+  }
+  {
+    int tested = 0, flagged = 0;
+    for (int trial = 0; trial < 20; trial++) {
+      for (const auto& k : kanjiList) {
+        Hand h = randomHand(1.f);
+        for (size_t si = 0; si < k.strokes.size(); si++) {
+          if (length(k.strokes[si].points) < 14) {
+            continue;
+          }
+          Checker c(k);
+          for (size_t p = 0; p < si; p++) {
+            c.add(write(k.strokes[p].points, h, 1.f));
+          }
+          if (c.done() != static_cast<int>(si)) {
+            continue;
+          }
+          tested++;
+          flagged += c.add(reversed(write(k.strokes[si].points, h, 1.f))).kind != StrokeResult::Good;
+        }
+      }
+    }
+    expect(double(flagged) / tested >= 0.97, "kanji: reversed strokes not accepted",
+           double(flagged) / tested, 0.97);
+  }
+  {
+    // The next stroke written instead of the due one, at every position.
+    int tested = 0, flagged = 0;
+    std::map<std::string, int> missedPerKanji;
+    for (int trial = 0; trial < 20; trial++) {
+      for (const auto& k : kanjiList) {
+        Hand h = randomHand(1.f);
+        for (size_t si = 0; si + 1 < k.strokes.size(); si++) {
+          Checker c(k);
+          for (size_t p = 0; p < si; p++) {
+            c.add(write(k.strokes[p].points, h, 1.f));
+          }
+          if (c.done() != static_cast<int>(si)) {
+            continue;
+          }
+          tested++;
+          const bool caught =
+            c.add(write(k.strokes[si + 1].points, h, 1.f)).kind != StrokeResult::Good;
+          flagged += caught;
+          if (!caught) {
+            missedPerKanji[k.glyph]++;
+          }
+        }
+      }
+    }
+    expect(double(flagged) / tested >= 0.98, "kanji: two neighbouring strokes swapped",
+           double(flagged) / tested, 0.98);
+    for (auto& [g, n] : missedPerKanji) {
+      if (n > 10) {
+        std::printf("    often missed: %s x%d\n", g.c_str(), n);
+      }
+    }
+  }
+  {
+    const std::pair<const char*, const char*> pairs[] = {
+      { "右", "左" }, { "左", "右" }, { "人", "入" }, { "入", "人" }, { "大", "天" },
+      { "日", "白" }, { "白", "百" }, { "千", "午" }, { "土", "上" }, { "十", "千" },
+    };
+    for (auto [want, written] : pairs) {
+      const Kana* a = find(want);
+      const Kana* b = find(written);
+      constexpr int trials = 200;
+      int passed = 0;
+      for (int trial = 0; trial < trials; trial++) {
+        Hand h = randomHand(1.f);
+        Checker c(*a);
+        for (const auto& s : b->strokes) {
+          c.add(write(s.points, h, 1.f));
+        }
+        passed += c.complete() && c.mistakes() == 0;
+      }
+      char label[96];
+      std::snprintf(label, sizeof label, "kanji: %s asked, %s written: caught", want, written);
+      const double rate = 1.0 - double(passed) / trials;
+      expect(rate >= 0.98, label, rate, 0.98);
+    }
+  }
+  {
+    int strokes = 0, good = 0;
+    for (int trial = 0; trial < 10; trial++) {
+      for (const auto& k : kanjiList) {
+        Hand h = randomHand(1.6f);
+        Checker c(k);
+        for (const auto& s : k.strokes) {
+          auto r = c.add(write(s.points, h, 1.6f));
+          strokes++;
+          if (r.kind == StrokeResult::Good) {
+            good++;
+          } else {
+            c.skip();
+          }
+        }
+      }
+    }
+    std::printf("%-46s %6.2f%%  (info)\n", "kanji: very sloppy strokes accepted",
+                100.0 * good / strokes);
   }
 
   std::printf(failures ? "\n%d FAILED\n" : "\nall passed\n", failures);

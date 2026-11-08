@@ -90,14 +90,26 @@ check(bool ok, const char* what) {
 constexpr int kTapCardX = 700;
 constexpr int kTapLearnY = 760, kTapPracticeY = 956, kTapTestY = 1152, kTapSheetY = 1348,
               kTapQuizY = 1544;
-constexpr int kTapScriptY = 487, kTapHiraganaX = 375, kTapKatakanaX = 1029;
+constexpr int kTapScriptY = 487, kTapHiraganaX = 266, kTapKatakanaX = 702, kTapKanjiX = 1138;
 
 // ----- writing sheet helpers (layout mirrors app.cpp) -----
 
+struct SheetGeom {
+  int cell, cols, rows, pitch;
+  int x0() const { return (gfx::kWidth - (cols + 1) * cell) / 2; }
+};
+constexpr SheetGeom kKanaGeom{ 180, 6, 7, 210 };
+constexpr SheetGeom kKanjiGeom{ 210, 5, 6, 240 };
+
+const SheetGeom&
+geomFor(kana::Script s) {
+  return s == kana::Script::Kanji ? kKanjiGeom : kKanaGeom;
+}
+
 gfx::Rect
-cellRect(const App& a, int line, int cell) {
+cellRect(const App& a, int line, int cell, const SheetGeom& g = kKanaGeom) {
   const int row = line - a.sheetTop();
-  return gfx::Rect::xywh(72 + cell * 180, 132 + row * 210, 180, 180);
+  return gfx::Rect::xywh(g.x0() + cell * g.cell, 132 + row * g.pitch, g.cell, g.cell);
 }
 
 // Writes stroke `s` of `k` into `box`, optionally scaled about the centre
@@ -141,15 +153,32 @@ contains(const std::string& s, const char* part) {
 }
 
 const gfx::Fonts* gFonts = nullptr;
-// Every message must fit on the screen in the bold feedback font.
+// Every message must fit on the screen in the bold feedback font (40 pt, or
+// the 32 pt the app falls back to for long ones).
+int
+messageWidth(const App& a) {
+  const int w40 = gFonts->textWidth(gfx::FontId::Bold, 40, a.message());
+  return w40 <= gfx::kWidth - 40 ? w40 : gFonts->textWidth(gfx::FontId::Bold, 32, a.message());
+}
+
 void
 checkFits(const App& a, const char* what) {
-  const int w = gFonts->textWidth(gfx::FontId::Bold, 40, a.message());
+  const int w = messageWidth(a);
   if (w > gfx::kWidth - 40) {
     std::printf("FAIL message too wide (%d px): %s\n", w, a.message().c_str());
     failures++;
   } else {
     std::printf("ok   %s fits (%d px)\n", what, w);
+  }
+}
+
+// Same, silent unless it fails; returns the number of too-wide messages.
+int tooWide = 0;
+void
+checkFitsQuiet(const App& a) {
+  if (messageWidth(a) > gfx::kWidth - 40) {
+    std::printf("     too wide: %s\n", a.message().c_str());
+    tooWide++;
   }
 }
 
@@ -247,6 +276,7 @@ void
 sheetAllKana(App& a, kana::Script script, const std::string& name) {
   tap(a, kTapCardX, kTapSheetY);
   check(a.screenName() == "sheet", "sheet opens");
+  const SheetGeom& g = geomFor(script);
   std::vector<int> order; // same order as the app: groups are contiguous
   for (const auto& k : kana::all()) {
     if (k.script == script) {
@@ -259,29 +289,33 @@ sheetAllKana(App& a, kana::Script script, const std::string& name) {
   std::string missed, slipped;
   const int lines = static_cast<int>(order.size());
   for (int line = 0; line < lines; line++) {
-    if (line >= a.sheetTop() + 7) {
+    if (line >= a.sheetTop() + g.rows) {
       a.touchSwipe(0, -400);
       a.flush();
     }
     const auto& k = kana::all()[order[line]];
-    std::vector<int> cellOrder = { 1, 2, 3, 4, 5, 6 };
+    std::vector<int> cellOrder;
+    for (int c = 1; c <= g.cols; c++) {
+      cellOrder.push_back(c);
+    }
     if (k.strokes.size() >= 2) {
       multi++;
-      writeStrokeIn(a, k, 1, cellRect(a, line, 1));
+      writeStrokeIn(a, k, 1, cellRect(a, line, 1, g));
+      checkFitsQuiet(a);
       if (contains(a.message(), "elöscht")) { // "gelöscht" or "Gelöscht"
         rejected++;
       } else {
         // Taken as stroke 1: the half kana in cell 1 is dropped as soon as
         // cell 2 gets a stroke, so write cell 1 last.
         slipped += k.glyph + " ";
-        cellOrder = { 2, 3, 4, 5, 6, 1 };
+        std::rotate(cellOrder.begin(), cellOrder.begin() + 1, cellOrder.end());
       }
     }
     for (int c : cellOrder) {
       cells++;
       for (int attempt = 0; attempt < 3; attempt++) {
         const int before = a.sheetCorrect();
-        writeKanaIn(a, k, cellRect(a, line, c), sc(vr), sh(vr), sh(vr));
+        writeKanaIn(a, k, cellRect(a, line, c, g), sc(vr), sh(vr), sh(vr));
         if (a.sheetCorrect() == before + 1) {
           firstTry += attempt == 0;
           break;
@@ -292,6 +326,7 @@ sheetAllKana(App& a, kana::Script script, const std::string& name) {
       }
     }
     linesDone += a.sheetCurrentLine() > line;
+    checkFitsQuiet(a); // "Zeile … geschafft – weiter mit …"
   }
   std::printf("     %s: %d/%d kana kept on the first try, %d/%d lines completed, "
               "%d/%d wrong-order starts erased\n",
@@ -419,7 +454,13 @@ quizRound(App& a, FakePlatform& pf, const std::string& name) {
   int asked = 0;
   while (!a.quizFinished() && asked < 200) {
     sound = sound && optionsSound(a);
+    if (asked < 2) {
+      save(a, "quiz-q" + std::to_string(asked) + "-" + name);
+    }
     tapOption(a, a.quizCorrectOption());
+    if (asked < 2) {
+      save(a, "quiz-a" + std::to_string(asked) + "-" + name);
+    }
     pf.now += 1000;
     a.tick();
     a.flush();
@@ -428,7 +469,70 @@ quizRound(App& a, FakePlatform& pf, const std::string& name) {
   std::printf("     %s: %d questions\n", name.c_str(), asked);
   check(sound && a.quizFinished() && a.quizRight() == asked && asked > 40,
         "full round: every question sound and answerable");
+  save(a, "quiz-end-" + name);
   tap(a, 1029, 1765); // Menü
+}
+
+// Kanji N5 as the third script: home toggle, Learn with the stroke strip,
+// prompts with meaning and readings, the sheet with bigger cells, progress.
+void
+kanjiTests(App& a, FakePlatform& pf) {
+  tap(a, kTapKanjiX, kTapScriptY);
+  check(a.screenName() == "home", "Kanji toggle stays on the home screen");
+  save(a, "home-kanji");
+
+  tap(a, kTapCardX, kTapLearnY);
+  check(a.screenName() == "practice", "Lernen opens with kanji");
+  save(a, "kanji-learn-start");
+  for (const char* glyph : { "一", "二", "三" }) {
+    const auto& k = *kana::find(glyph);
+    for (size_t s = 0; s < k.strokes.size(); s++) {
+      writeStroke(a, k, int(s));
+    }
+    check(contains(a.message(), "Richtig") || contains(a.message(), "Ausgezeichnet"),
+          "a kanji written in order is accepted in Lernen");
+    pf.now += 1500;
+    a.tick();
+    a.flush();
+  }
+  // Skip ahead to 語 (14 strokes) for the long stroke-order strip.
+  for (int i = 0; i < 150 && a.practiceGlyph() != "語"; i++) {
+    tap(a, 1152, 1782);
+  }
+  check(a.practiceGlyph() == "語", "Lernen reaches 語");
+  save(a, "kanji-learn-go");
+  const auto& go = *kana::find("語");
+  writeStroke(a, go, 0);
+  writeStroke(a, go, 2); // wrong order
+  check(contains(a.message(), "zuerst kommt Strich 2"), "kanji stroke order is checked in Lernen");
+  writeStroke(a, go, 1);
+  for (size_t s = 2; s < go.strokes.size(); s++) {
+    writeStroke(a, go, int(s));
+  }
+  check(contains(a.message(), "Geschafft"), "語 finished after the mistake");
+  save(a, "kanji-learn-go-done");
+
+  tap(a, 120, 56);
+  tap(a, kTapCardX, kTapPracticeY);
+  check(a.screenName() == "practice", "Üben opens with kanji");
+  save(a, "kanji-practice");
+
+  tap(a, 120, 56);
+  tap(a, kTapCardX, kTapSheetY);
+  check(a.screenName() == "sheet", "Schreibblatt opens with kanji");
+  const auto& one = *kana::find("一");
+  for (int c = 1; c <= kKanjiGeom.cols; c++) {
+    writeKanaIn(a, one, cellRect(a, 0, c, kKanjiGeom));
+  }
+  check(a.sheetCorrect() == 5 && a.sheetCurrentLine() == 1, "kanji line has five cells");
+  writeKanaIn(a, *kana::find("二"), cellRect(a, 1, 1, kKanjiGeom));
+  save(a, "kanji-sheet");
+  tap(a, 120, 56);
+
+  tap(a, 375, 1779); // Fortschritt
+  check(a.screenName() == "progress", "progress shows kanji");
+  save(a, "kanji-progress");
+  tap(a, 120, 56);
 }
 
 } // namespace
@@ -542,7 +646,14 @@ main(int argc, char** argv) {
   sheetAllKana(a, kana::Script::Katakana, "Katakana");
   quizRound(a, pf, "Katakana");
   save(a, "home-katakana");
+
+  // Kanji N5
+  kanjiTests(a, pf);
+  sheetAllKana(a, kana::Script::Kanji, "Kanji");
+  quizRound(a, pf, "Kanji");
+  check(tooWide == 0, "every sheet message fits on the screen");
   tap(a, kTapHiraganaX, kTapScriptY);
+  check(a.screenName() == "home", "back to hiragana");
 
   a.powerButton();
   a.flush();

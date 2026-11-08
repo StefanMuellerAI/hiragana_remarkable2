@@ -68,6 +68,12 @@ public:
   int quizRight() const { return quizRight_; }
   int quizWrong() const { return quizWrong_; }
   bool quizFinished() const { return quizEnd_; }
+  // The character asked on the Lernen/Üben/Test screen, "" elsewhere.
+  std::string practiceGlyph() const {
+    return screen_ == Screen::Practice && pos_ < queue_.size()
+             ? kana::all()[queue_[pos_]].glyph
+             : std::string();
+  }
 
 private:
   enum class Screen { Home, Practice, Summary, Progress, System, Sheet, Quiz };
